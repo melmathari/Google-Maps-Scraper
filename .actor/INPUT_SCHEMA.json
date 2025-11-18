@@ -1,0 +1,68 @@
+{
+  "title": "Google Maps Scraper Input",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "searchQuery": {
+      "title": "Search Query",
+      "type": "string",
+      "description": "What to search for on Google Maps (e.g., 'restaurants', 'hotels', 'coffee shops')",
+      "editor": "textfield",
+      "example": "restaurants",
+      "minLength": 1
+    },
+    "location": {
+      "title": "Location",
+      "type": "string",
+      "description": "Where to search (e.g., 'Dubai', 'Kuwait City', 'Manama, Bahrain'). Leave empty to use Google's auto-detection.",
+      "editor": "textfield",
+      "example": "Dubai, UAE",
+      "prefill": ""
+    },
+    "maxResults": {
+      "title": "Maximum Results",
+      "type": "integer",
+      "description": "Maximum number of businesses to scrape (1-500)",
+      "editor": "number",
+      "minimum": 1,
+      "maximum": 500,
+      "default": 100,
+      "unit": "businesses"
+    },
+    "scrapeDetails": {
+      "title": "Scrape Business Details",
+      "type": "boolean",
+      "description": "Visit each business page to extract detailed information (address, phone, website, hours). This takes longer but provides complete data.",
+      "editor": "checkbox",
+      "default": false
+    },
+    "proxy": {
+      "title": "Use Proxy",
+      "type": "boolean",
+      "description": "Use Apify residential proxy to avoid blocking. Highly recommended for Google Maps.",
+      "editor": "checkbox",
+      "default": true
+    },
+    "minDelay": {
+      "title": "Minimum Delay (seconds)",
+      "type": "integer",
+      "description": "Minimum delay between actions in seconds",
+      "editor": "number",
+      "minimum": 0,
+      "maximum": 10,
+      "default": 1,
+      "unit": "seconds"
+    },
+    "maxDelay": {
+      "title": "Maximum Delay (seconds)",
+      "type": "integer",
+      "description": "Maximum delay between actions in seconds",
+      "editor": "number",
+      "minimum": 1,
+      "maximum": 20,
+      "default": 3,
+      "unit": "seconds"
+    }
+  },
+  "required": ["searchQuery"]
+}

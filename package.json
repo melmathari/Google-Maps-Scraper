@@ -1,0 +1,34 @@
+{
+  "name": "google-maps-scraper",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Production-ready Apify Actor for scraping business listings and reviews from Google Maps",
+  "main": "main.js",
+  "author": "Apify",
+  "license": "Apache-2.0",
+  "scripts": {
+    "start": "node main.js",
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "dependencies": {
+    "apify": "^3.2.0",
+    "crawlee": "^3.7.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "apify",
+    "google-maps",
+    "google",
+    "maps",
+    "scraper",
+    "reviews",
+    "business",
+    "local",
+    "places",
+    "restaurants",
+    "gcc",
+    "worldwide"
+  ]
+}

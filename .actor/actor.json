@@ -1,0 +1,79 @@
+{
+  "actorSpecification": 1,
+  "name": "google-maps-scraper",
+  "title": "Google Maps Business & Review Scraper",
+  "description": "Production-ready scraper for extracting business listings, reviews, and detailed information from Google Maps worldwide. Perfect for local business data, competitor analysis, and market research.",
+  "version": "1.0.0",
+  "meta": {
+    "templateId": "puppeteer-crawler"
+  },
+  "input": "./INPUT_SCHEMA.json",
+  "dockerfile": "./Dockerfile",
+  "readme": "./README.md",
+  "categories": [
+    "scraping",
+    "business",
+    "reviews",
+    "local"
+  ],
+  "storages": {
+    "dataset": {
+      "actorSpecification": 1,
+      "title": "Google Maps Businesses Dataset",
+      "views": {
+        "overview": {
+          "title": "Overview",
+          "transformation": {
+            "fields": [
+              "name",
+              "rating",
+              "reviewCount",
+              "category",
+              "address",
+              "phone",
+              "website",
+              "url"
+            ]
+          },
+          "display": {
+            "component": "table",
+            "properties": {
+              "name": {
+                "label": "Business Name",
+                "format": "text"
+              },
+              "rating": {
+                "label": "Rating",
+                "format": "number"
+              },
+              "reviewCount": {
+                "label": "Reviews",
+                "format": "number"
+              },
+              "category": {
+                "label": "Category",
+                "format": "text"
+              },
+              "address": {
+                "label": "Address",
+                "format": "text"
+              },
+              "phone": {
+                "label": "Phone",
+                "format": "text"
+              },
+              "website": {
+                "label": "Website",
+                "format": "link"
+              },
+              "url": {
+                "label": "Google Maps URL",
+                "format": "link"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
