@@ -25,7 +25,8 @@ function constructGoogleMapsUrl(searchQuery, location = null) {
         query = `${query} in ${location.trim()}`;
     }
 
-    return `${baseUrl}${encodeURIComponent(query)}`;
+    // Force English language with hl=en parameter
+    return `${baseUrl}${encodeURIComponent(query)}?hl=en`;
 }
 
 /**
@@ -298,7 +299,8 @@ await Actor.main(async () => {
                     '--disable-setuid-sandbox',
                     '--disable-dev-shm-usage',
                     '--disable-blink-features=AutomationControlled',
-                    '--window-size=1920,1080'
+                    '--window-size=1920,1080',
+                    '--lang=en-US,en'
                 ]
             },
             userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
@@ -306,6 +308,11 @@ await Actor.main(async () => {
 
         async requestHandler({ page, request, log }) {
             const url = request.url;
+
+            // Force English language in HTTP headers
+            await page.setExtraHTTPHeaders({
+                'Accept-Language': 'en-US,en;q=0.9'
+            });
 
             // Check if this is search results or business details page
             const isSearchPage = url.includes('/maps/search/');
