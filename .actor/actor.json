@@ -19,5 +19,9 @@
     "storages": {
         "dataset": "./dataset_schema.json",
         "keyValueStore": "./key_value_store_schema.json"
+    },
+    "defaultRunOptions": {
+        "timeoutSecs": 3600,
+        "memoryMbytes": 2048
     }
 }
