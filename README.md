@@ -71,7 +71,7 @@ Perfect for:
 |-----------|------|----------|---------|-------------|
 | `searchQuery` | string | ✅ Yes | - | What to search for (e.g., "restaurants", "hotels") |
 | `location` | string | No | - | Where to search (e.g., "Dubai", "Kuwait City") |
-| `maxResults` | integer | No | 100 | Maximum businesses to scrape (1-500) |
+| `maxResults` | integer | No | 100 | Maximum businesses to scrape (0 = unlimited) |
 | `scrapeDetails` | boolean | No | false | Visit each business page for detailed info |
 | `proxyConfiguration` | object | No | See below | Proxy settings (residential recommended) |
 | `minDelay` | integer | No | 1 | Minimum delay between actions (seconds) |
