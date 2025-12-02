@@ -283,7 +283,7 @@ Costs depend on:
 
 ### For Best Results
 
-1. **Always use proxy**: Set `proxy: true` to avoid Google blocking
+1. **Always use proxy**: Use residential proxy configuration to avoid Google blocking
 2. **Start small**: Test with `maxResults: 10` first
 3. **Specific searches**: Use detailed queries ("italian restaurants in downtown Dubai")
 4. **Respect rate limits**: Use default delays (1-3 seconds)
@@ -320,10 +320,11 @@ Costs depend on:
 **Problem**: Actor fails with timeout or CAPTCHA errors
 
 **Solutions**:
-1. Ensure `proxy: true`
+1. Ensure `proxyConfiguration.useApifyProxy: true` with `RESIDENTIAL` group
 2. Increase delays (`minDelay: 2`, `maxDelay: 5`)
 3. Reduce `maxResults`
-4. Wait a few hours before trying again
+4. Try a different proxy country (`apifyProxyCountry: "US"`)
+5. Wait a few hours before trying again
 
 ### Missing Data
 
