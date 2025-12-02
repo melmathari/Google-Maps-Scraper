@@ -77,77 +77,126 @@ async function extractBusinessListings(page, maxResults) {
 
     const businesses = await page.evaluate((max) => {
         const results = [];
+        const seenUrls = new Set();
 
-        // Find all business result cards
-        const businessCards = document.querySelectorAll('a[href*="/maps/place/"]');
-
-        for (let i = 0; i < businessCards.length && results.length < max; i++) {
+        // Method 1: Find article elements (search result cards)
+        const articles = document.querySelectorAll('div[role="article"]');
+        
+        for (const article of articles) {
+            if (results.length >= max) break;
+            
             try {
-                const card = businessCards[i];
-                const parent = card.closest('[class*="card"]') || card.closest('div[role="article"]') || card.parentElement;
+                // Get the link to the place
+                const link = article.querySelector('a[href*="/maps/place/"]');
+                if (!link) continue;
+                
+                const url = link.href;
+                if (seenUrls.has(url)) continue;
+                seenUrls.add(url);
 
-                // Extract business name
-                const nameEl = card.querySelector('[class*="fontHeadline"]') ||
-                             card.querySelector('div[class*="title"]') ||
-                             card.querySelector('[aria-label]');
-                const name = nameEl ? (nameEl.textContent || nameEl.getAttribute('aria-label')) : 'Unknown Business';
+                // Extract business name from aria-label or link text
+                let name = article.getAttribute('aria-label') || 
+                          link.getAttribute('aria-label') ||
+                          link.textContent?.trim();
+                
+                // Clean up the name
+                if (name) {
+                    name = name.split('·')[0].trim();
+                }
+                
+                if (!name || name === '') {
+                    name = 'Unknown Business';
+                }
 
-                // Extract URL
-                const url = card.href;
-
-                // Extract rating
+                // Extract rating and review count from text content
                 let rating = null;
-                const ratingEl = parent?.querySelector('[role="img"][aria-label*="stars"]') ||
-                               parent?.querySelector('span[aria-label*="star"]');
-                if (ratingEl) {
-                    const ariaLabel = ratingEl.getAttribute('aria-label');
-                    const match = ariaLabel?.match(/([\d.]+)\s*star/i);
-                    if (match) rating = match[1];
-                }
-
-                // Extract review count
                 let reviewCount = null;
-                const reviewEl = parent?.querySelector('[aria-label*="review"]');
-                if (reviewEl) {
-                    const text = reviewEl.textContent || reviewEl.getAttribute('aria-label');
-                    const match = text?.match(/([\d,]+)\s*review/i);
-                    if (match) reviewCount = match[1].replace(/,/g, '');
+                
+                // Look for rating pattern like "4.8" or "4.8(119)"
+                const textContent = article.textContent || '';
+                
+                // Match rating pattern: number followed by stars or parentheses
+                const ratingMatch = textContent.match(/(\d+\.?\d*)\s*(?:stars?|\()/i);
+                if (ratingMatch) {
+                    rating = parseFloat(ratingMatch[1]);
+                }
+                
+                // Match review count in parentheses: (119) or (1,234)
+                const reviewMatch = textContent.match(/\(([0-9,]+)\)/);
+                if (reviewMatch) {
+                    reviewCount = parseInt(reviewMatch[1].replace(/,/g, ''));
                 }
 
-                // Extract category
+                // Extract category - usually after the rating info
                 let category = null;
-                const categoryEls = parent?.querySelectorAll('span[class*="fontBody"]');
-                if (categoryEls && categoryEls.length > 0) {
-                    for (const el of categoryEls) {
-                        const text = el.textContent?.trim();
-                        if (text && !text.includes('$') && !text.includes('·') && text.length < 50) {
+                const spans = article.querySelectorAll('span');
+                for (const span of spans) {
+                    const text = span.textContent?.trim();
+                    // Category is usually a short text without numbers or special chars
+                    if (text && 
+                        text.length > 3 && 
+                        text.length < 50 && 
+                        !text.match(/^\d/) && 
+                        !text.includes('(') &&
+                        !text.includes('·') &&
+                        !text.includes('Open') &&
+                        !text.includes('Closed') &&
+                        !text.includes('$')) {
+                        // Check if it looks like a category (capitalize words)
+                        if (text.match(/^[A-Z][a-z]/) || text.includes('service') || text.includes('cleaning')) {
                             category = text;
                             break;
                         }
                     }
                 }
 
-                // Extract address snippet
-                let addressSnippet = null;
-                const addressEl = parent?.querySelector('[class*="address"]');
-                if (addressEl) {
-                    addressSnippet = addressEl.textContent?.trim();
-                }
+                results.push({
+                    name: name,
+                    url: url,
+                    rating: rating,
+                    reviewCount: reviewCount,
+                    category: category,
+                    addressSnippet: null,
+                    scrapedAt: new Date().toISOString()
+                });
+            } catch (error) {
+                console.error('Error extracting business:', error.message);
+            }
+        }
 
-                // Only add if we have at least a name and URL
-                if (name && url && url.includes('/maps/place/')) {
+        // Method 2: If no articles found, try direct link approach
+        if (results.length === 0) {
+            const links = document.querySelectorAll('a[href*="/maps/place/"]');
+            
+            for (const link of links) {
+                if (results.length >= max) break;
+                
+                try {
+                    const url = link.href;
+                    if (seenUrls.has(url)) continue;
+                    seenUrls.add(url);
+
+                    // Get name from aria-label or text
+                    let name = link.getAttribute('aria-label') || link.textContent?.trim();
+                    if (name) {
+                        name = name.split('·')[0].trim();
+                    }
+                    if (!name || name === '') {
+                        name = 'Unknown Business';
+                    }
+
                     results.push({
-                        name: name.trim(),
-                        url,
-                        rating: rating ? parseFloat(rating) : null,
-                        reviewCount: reviewCount ? parseInt(reviewCount) : null,
-                        category,
-                        addressSnippet,
+                        name: name,
+                        url: url,
+                        rating: null,
+                        reviewCount: null,
+                        category: null,
+                        addressSnippet: null,
                         scrapedAt: new Date().toISOString()
                     });
+                } catch (error) {
+                    console.error('Error extracting business link:', error.message);
                 }
-            } catch (error) {
-                console.error(`Error extracting business ${i}:`, error.message);
             }
         }
 
@@ -168,54 +217,137 @@ async function extractBusinessDetails(page, business) {
 
     try {
         // Wait for content to load
-        await page.waitForSelector('h1', { timeout: 10000 });
+        await page.waitForSelector('h1', { timeout: 15000 });
         await randomDelay(2000, 3000);
 
         const details = await page.evaluate(() => {
             const data = {};
 
-            // Extract business name (confirmation)
+            // Extract business name from h1 heading
             const nameEl = document.querySelector('h1');
             data.name = nameEl ? nameEl.textContent.trim() : null;
 
-            // Extract rating and review count
-            const ratingEl = document.querySelector('[aria-label*="stars"]');
+            // Extract rating - look for element with "X stars" or "X.X stars" aria-label
+            const ratingEl = document.querySelector('[aria-label*="stars"]') ||
+                            document.querySelector('[aria-label*="star"]');
             if (ratingEl) {
                 const ariaLabel = ratingEl.getAttribute('aria-label');
                 const ratingMatch = ariaLabel?.match(/([\d.]+)\s*star/i);
-                const reviewMatch = ariaLabel?.match(/([\d,]+)\s*review/i);
-                data.rating = ratingMatch ? parseFloat(ratingMatch[1]) : null;
-                data.reviewCount = reviewMatch ? parseInt(reviewMatch[1].replace(/,/g, '')) : null;
+                if (ratingMatch) {
+                    data.rating = parseFloat(ratingMatch[1]);
+                }
             }
 
-            // Extract address
-            const addressButton = document.querySelector('button[data-item-id*="address"]');
-            if (addressButton) {
-                data.address = addressButton.getAttribute('aria-label')?.replace('Address: ', '') || null;
+            // Extract review count - look for button/element with "X review" or "X reviews"
+            // The review count button usually has text like "119 reviews"
+            const reviewElements = document.querySelectorAll('[aria-label*="review"], button');
+            for (const el of reviewElements) {
+                const ariaLabel = el.getAttribute('aria-label') || '';
+                const textContent = el.textContent || '';
+                
+                // Match patterns like "119 reviews" or "119 review"
+                const reviewMatch = ariaLabel.match(/^(\d+[\d,]*)\s*review/i) ||
+                                   textContent.match(/^(\d+[\d,]*)\s*review/i);
+                if (reviewMatch) {
+                    data.reviewCount = parseInt(reviewMatch[1].replace(/,/g, ''));
+                    break;
+                }
             }
 
-            // Extract phone
-            const phoneButton = document.querySelector('button[data-item-id*="phone"]');
-            if (phoneButton) {
-                data.phone = phoneButton.getAttribute('aria-label')?.replace(/Phone:\s*/i, '') || null;
+            // Alternative: look for review count in a span near the rating
+            if (!data.reviewCount) {
+                const allSpans = document.querySelectorAll('span');
+                for (const span of allSpans) {
+                    const text = span.textContent?.trim() || '';
+                    const match = text.match(/^(\d+[\d,]*)\s*review/i);
+                    if (match) {
+                        data.reviewCount = parseInt(match[1].replace(/,/g, ''));
+                        break;
+                    }
+                }
             }
 
-            // Extract website
-            const websiteLink = document.querySelector('a[data-item-id*="authority"]');
-            if (websiteLink) {
-                data.website = websiteLink.href || null;
+            // Extract address - button with aria-label starting with "Address:"
+            const allButtons = document.querySelectorAll('button[aria-label]');
+            for (const btn of allButtons) {
+                const label = btn.getAttribute('aria-label') || '';
+                
+                if (label.startsWith('Address:')) {
+                    data.address = label.replace('Address:', '').trim();
+                }
+                if (label.startsWith('Phone:')) {
+                    data.phone = label.replace('Phone:', '').trim();
+                }
+                if (label.startsWith('Plus code:')) {
+                    data.plusCode = label.replace('Plus code:', '').trim();
+                }
             }
 
-            // Extract hours
+            // Extract website - link with aria-label containing "Website:"
+            const websiteLinks = document.querySelectorAll('a[aria-label*="Website"], a[data-item-id*="authority"]');
+            for (const link of websiteLinks) {
+                if (link.href && !link.href.includes('google.com')) {
+                    data.website = link.href;
+                    break;
+                }
+            }
+            
+            // Alternative website extraction
+            if (!data.website) {
+                const allLinks = document.querySelectorAll('a[href]');
+                for (const link of allLinks) {
+                    const ariaLabel = link.getAttribute('aria-label') || '';
+                    if (ariaLabel.toLowerCase().includes('website') || 
+                        ariaLabel.toLowerCase().includes('open website')) {
+                        if (link.href && !link.href.includes('google.com')) {
+                            data.website = link.href;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Extract hours status
             const hoursButton = document.querySelector('button[data-item-id*="hours"]');
             if (hoursButton) {
                 const ariaLabel = hoursButton.getAttribute('aria-label');
                 data.hoursStatus = ariaLabel || null;
+            } else {
+                // Look for Open/Closed status in buttons
+                for (const btn of allButtons) {
+                    const label = btn.getAttribute('aria-label') || '';
+                    if (label.includes('Open') || label.includes('Closed') || label.includes('Opens') || label.includes('Closes')) {
+                        data.hoursStatus = label;
+                        break;
+                    }
+                }
             }
 
-            // Extract category/type
+            // Extract category/type - look for category button or text
             const categoryButton = document.querySelector('button[jsaction*="category"]');
-            data.category = categoryButton ? categoryButton.textContent.trim() : null;
+            if (categoryButton) {
+                data.category = categoryButton.textContent.trim();
+            } else {
+                // Look for category in spans with specific patterns
+                const spans = document.querySelectorAll('span');
+                for (const span of spans) {
+                    const text = span.textContent?.trim() || '';
+                    // Categories often end with "service", "restaurant", "shop", etc.
+                    if (text.length > 3 && text.length < 50 && 
+                        !text.match(/^\d/) && 
+                        !text.includes('review') &&
+                        !text.includes('star') &&
+                        (text.toLowerCase().includes('service') || 
+                         text.toLowerCase().includes('cleaning') ||
+                         text.toLowerCase().includes('restaurant') ||
+                         text.toLowerCase().includes('shop') ||
+                         text.toLowerCase().includes('store') ||
+                         text.match(/^[A-Z][a-z]+\s+[a-z]+$/))) {
+                        data.category = text;
+                        break;
+                    }
+                }
+            }
 
             // Extract price level
             const priceEl = document.querySelector('[aria-label*="Price"]');
@@ -224,13 +356,19 @@ async function extractBusinessDetails(page, business) {
             return data;
         });
 
-        // Merge details with business object
-        Object.assign(business, details);
+        // Merge details with business object, but only update if we got new data
+        if (details.name) business.name = details.name;
+        if (details.rating !== undefined && details.rating !== null) business.rating = details.rating;
+        if (details.reviewCount !== undefined && details.reviewCount !== null) business.reviewCount = details.reviewCount;
+        if (details.address) business.address = details.address;
+        if (details.phone) business.phone = details.phone;
+        if (details.website) business.website = details.website;
+        if (details.hoursStatus) business.hoursStatus = details.hoursStatus;
+        if (details.category) business.category = details.category;
+        if (details.priceLevel) business.priceLevel = details.priceLevel;
+        if (details.plusCode) business.plusCode = details.plusCode;
 
-        // Extract reviews if requested
-        // (Can be added as an option)
-
-        console.log(`  ✓ Details extracted for: ${business.name}`);
+        console.log(`  ✓ Details extracted for: ${business.name} (Rating: ${business.rating}, Reviews: ${business.reviewCount})`);
     } catch (error) {
         console.error(`  ✗ Error extracting details for ${business.name}:`, error.message);
     }
