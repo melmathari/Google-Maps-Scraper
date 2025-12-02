@@ -231,9 +231,3 @@ Having issues? Check:
 2. Proxy configuration is correct
 3. Search returns results when done manually
 4. Actor logs for specific errors
-
----
-
-**Version:** 1.0.0  
-**Last Updated:** December 2025  
-**License:** Apache-2.0
