@@ -1,454 +1,239 @@
-# Google Maps Business & Review Scraper
+# Google Maps Data Extractor
 
-Production-ready Apify Actor for scraping business listings, reviews, and detailed information from Google Maps worldwide. Extract comprehensive data for local businesses, competitor analysis, market research, and lead generation.
+Powerful Apify Actor that extracts business information from Google Maps. Get names, ratings, reviews, contact details, websites, and addresses for any business type in any location worldwide.
 
-## 🌍 **Coverage**
+## What It Does
 
-**Worldwide** - Works in any country, any language, any location!
+This tool searches Google Maps for businesses matching your criteria and extracts their public information. Whether you need data on restaurants in Tokyo, plumbers in London, or hotels in New York — this extractor handles it all.
 
-Perfect for:
-- 🍽️ Restaurants & Food Services
-- 🏨 Hotels & Accommodations
-- 🏪 Retail Stores & Shopping
-- 💼 Professional Services
-- 🏥 Healthcare & Medical
-- 🔧 Home Services & Contractors
-- 💇 Beauty & Personal Care
-- 🎓 Education & Training
-- And ANY business type on Google Maps!
+**Key Capabilities:**
+- Search any business category (restaurants, hotels, dentists, gyms, etc.)
+- Target any geographic location globally
+- Extract contact information (phone, website, address)
+- Capture ratings and review counts
+- Get business hours and status
+- Optional deep extraction for complete data
 
-## ✨ **Features**
+## Output Fields
 
-- ✅ **Search Any Business Type** - Restaurants, hotels, shops, services, etc.
-- ✅ **Worldwide Coverage** - Works in all countries and languages
-- ✅ **Comprehensive Data** - Name, rating, reviews, address, phone, website, hours
-- ✅ **Optional Detail Scraping** - Visit each business page for complete information
-- ✅ **Smart Scrolling** - Automatically loads more results
-- ✅ **Anti-Detection** - Built-in delays, proxy support, stealth measures
-- ✅ **Incremental Saving** - Data saved progressively to avoid loss
-- ✅ **Production Ready** - Clean code, error handling, well-documented
+| Field | Description | Availability |
+|-------|-------------|--------------|
+| `name` | Business name | Always |
+| `url` | Google Maps link | Always |
+| `rating` | Star rating (1-5) | Usually |
+| `reviewCount` | Number of reviews | Usually |
+| `category` | Business type | Usually |
+| `address` | Full street address | With details |
+| `phone` | Contact number | With details |
+| `website` | Business website | With details |
+| `hoursStatus` | Open/closed status | With details |
+| `priceLevel` | Price indicator | When available |
+| `scrapedAt` | Extraction timestamp | Always |
 
-## 📊 **Extracted Data**
-
-### Basic Data (from search results)
-- Business name
-- Rating (1-5 stars)
-- Review count
-- Category/type
-- Address snippet
-- Google Maps URL
-
-### Detailed Data (when `scrapeDetails: true`)
-- **Full address**
-- **Phone number**
-- **Website URL**
-- **Business hours** (open/closed status)
-- **Category/type** (verified)
-- **Price level** (if available)
-- Plus all basic data fields
-
-### Example Output
+### Sample Output
 
 ```json
 {
-  "name": "Al Abraaj Restaurant",
+  "name": "The Coffee House",
   "url": "https://www.google.com/maps/place/...",
-  "rating": 4.5,
-  "reviewCount": 1250,
-  "category": "Arabic restaurant",
-  "address": "Building 123, Road 456, Manama, Bahrain",
-  "phone": "+973 1234 5678",
-  "website": "https://alabraaj.com",
-  "hoursStatus": "Open ⋅ Closes 11 PM",
-  "priceLevel": "Moderate",
-  "scrapedAt": "2025-11-18T14:30:00.000Z"
+  "rating": 4.7,
+  "reviewCount": 892,
+  "category": "Coffee shop",
+  "address": "123 Main Street, New York, NY 10001",
+  "phone": "+1 212-555-0123",
+  "website": "https://thecoffeehouse.com",
+  "hoursStatus": "Open · Closes 9 PM",
+  "scrapedAt": "2025-12-02T10:30:00.000Z"
 }
 ```
 
-## 🔧 **Input Parameters**
+## Input Configuration
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `searchQuery` | string | ✅ Yes | - | What to search for (e.g., "restaurants", "hotels") |
-| `location` | string | No | - | Where to search (e.g., "Dubai", "Kuwait City") |
-| `maxResults` | integer | No | 100 | Maximum businesses to scrape (0 = unlimited) |
-| `scrapeDetails` | boolean | No | false | Visit each business page for detailed info |
-| `proxyConfiguration` | object | No | See below | Proxy settings (residential recommended) |
-| `minDelay` | integer | No | 1 | Minimum delay between actions (seconds) |
-| `maxDelay` | integer | No | 3 | Maximum delay between actions (seconds) |
+| `searchQuery` | string | Yes | — | Business type to find (e.g., "dentists", "pizza") |
+| `location` | string | No | — | Target area (e.g., "Chicago, IL", "Paris, France") |
+| `maxResults` | integer | No | 100 | How many businesses to extract (0 = no limit) |
+| `scrapeDetails` | boolean | No | false | Visit each listing for full details |
+| `proxyConfiguration` | object | No | Residential | Proxy settings |
+| `minDelay` | integer | No | 1 | Min seconds between requests |
+| `maxDelay` | integer | No | 3 | Max seconds between requests |
 
-### Proxy Configuration Options
+## Usage Examples
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `useApifyProxy` | boolean | Use Apify's proxy service |
-| `apifyProxyGroups` | array | Proxy groups to use (e.g., `["RESIDENTIAL"]`, `["SHADER"]`) |
-| `apifyProxyCountry` | string | Country code for proxy (e.g., `"US"`, `"GB"`, `"AE"`) |
-| `proxyUrls` | array | Custom proxy URLs (when not using Apify proxy) |
-
-**Default proxy configuration:**
-```json
-{
-  "useApifyProxy": true,
-  "apifyProxyGroups": ["RESIDENTIAL"]
-}
-```
-
-## 📖 **Usage Examples**
-
-### Example 1: Restaurants in Dubai
+### Find Restaurants in a City
 
 ```json
 {
   "searchQuery": "restaurants",
-  "location": "Dubai, UAE",
-  "maxResults": 50,
-  "proxyConfiguration": {
-    "useApifyProxy": true,
-    "apifyProxyGroups": ["RESIDENTIAL"]
-  }
+  "location": "San Francisco, CA",
+  "maxResults": 50
 }
 ```
 
-**Output**: 50 restaurants in Dubai with ratings, review counts, and basic info.
-
----
-
-### Example 2: Hotels in Kuwait with Full Details
+### Get Complete Hotel Information
 
 ```json
 {
   "searchQuery": "hotels",
-  "location": "Kuwait City",
+  "location": "Miami Beach, FL",
   "maxResults": 30,
-  "scrapeDetails": true,
-  "proxyConfiguration": {
-    "useApifyProxy": true,
-    "apifyProxyGroups": ["RESIDENTIAL"]
-  }
-}
-```
-
-**Output**: 30 hotels with complete information including phone numbers, websites, and addresses.
-
----
-
-### Example 3: Coffee Shops in Bahrain (with US Proxy)
-
-```json
-{
-  "searchQuery": "coffee shops in Manama",
-  "maxResults": 20,
-  "proxyConfiguration": {
-    "useApifyProxy": true,
-    "apifyProxyGroups": ["RESIDENTIAL"],
-    "apifyProxyCountry": "US"
-  }
-}
-```
-
-**Output**: 20 coffee shops in Manama (using US-based residential proxy).
-
----
-
-### Example 4: Gyms in Riyadh
-
-```json
-{
-  "searchQuery": "gyms",
-  "location": "Riyadh, Saudi Arabia",
-  "maxResults": 40,
   "scrapeDetails": true
 }
 ```
 
----
-
-### Example 5: Dentists in Doha
+### Extract Local Service Providers
 
 ```json
 {
-  "searchQuery": "dentists near me",
-  "location": "Doha, Qatar",
-  "maxResults": 25,
-  "scrapeDetails": true
-}
-```
-
----
-
-## 🚀 **Quick Start**
-
-### Running on Apify Platform
-
-1. Create a new Actor on [Apify Console](https://console.apify.com/)
-2. Upload all files from this repository
-3. Click "Build"
-4. Configure your input
-5. Click "Start"
-
-### Running Locally
-
-```bash
-# Install dependencies
-npm install
-
-# Set Apify token (if using proxy)
-export APIFY_TOKEN=your_token_here
-
-# Create input.json
-cat > input.json << EOF
-{
-  "searchQuery": "restaurants",
-  "location": "Dubai",
-  "maxResults": 20,
-  "proxyConfiguration": {
-    "useApifyProxy": true,
-    "apifyProxyGroups": ["RESIDENTIAL"]
-  }
-}
-EOF
-
-# Run
-npm start
-```
-
----
-
-## 💡 **Use Cases**
-
-### 1. **Competitor Analysis**
-Scrape all competitors in your area:
-```json
-{
-  "searchQuery": "italian restaurants",
-  "location": "Dubai Marina",
+  "searchQuery": "plumbers",
+  "location": "Austin, TX",
   "maxResults": 100,
   "scrapeDetails": true
 }
 ```
 
-### 2. **Lead Generation**
-Find potential clients:
+### International Search
+
 ```json
 {
-  "searchQuery": "real estate agents",
-  "location": "Abu Dhabi",
-  "maxResults": 200,
-  "scrapeDetails": true
+  "searchQuery": "sushi restaurants",
+  "location": "Tokyo, Japan",
+  "maxResults": 40,
+  "proxyConfiguration": {
+    "useApifyProxy": true,
+    "apifyProxyGroups": ["RESIDENTIAL"]
+  }
 }
 ```
 
-### 3. **Market Research**
-Analyze a market:
-```json
-{
-  "searchQuery": "coffee shops",
-  "location": "Riyadh",
-  "maxResults": 500
-}
+## Practical Applications
+
+**Lead Generation**
+Find potential customers or partners in specific industries and locations. Extract contact details for outreach campaigns.
+
+**Market Research**
+Analyze business density, ratings distribution, and competitive landscape in target markets.
+
+**Competitor Analysis**
+Monitor competitors' ratings, review counts, and presence across different locations.
+
+**Location Intelligence**
+Map out business distribution for site selection, franchise planning, or market entry decisions.
+
+**Data Enrichment**
+Supplement existing business databases with current contact information and ratings.
+
+## Running the Extractor
+
+### On Apify Platform
+
+1. Go to [Apify Console](https://console.apify.com/)
+2. Create new Actor from this source
+3. Build the Actor
+4. Set your input parameters
+5. Run and download results
+
+### Local Development
+
+```bash
+npm install
+
+# Set your Apify token for proxy access
+export APIFY_TOKEN=your_token
+
+# Create input.json with your parameters
+npm start
 ```
 
-### 4. **Review Analysis**
-Collect review data (future feature - can be added):
-```json
-{
-  "searchQuery": "hotels",
-  "location": "Doha",
-  "scrapeReviews": true,
-  "maxReviews": 50
-}
-```
+## Performance Tips
 
----
+**Speed vs. Completeness**
+- `scrapeDetails: false` — Fast extraction, basic data only
+- `scrapeDetails: true` — Slower but gets phone, website, full address
 
-## 💰 **Cost Estimates**
+**Avoiding Blocks**
+- Always use residential proxies (default setting)
+- Keep delays at 1-3 seconds (default)
+- Start with smaller batches to test
 
-Costs depend on:
-- Number of businesses scraped
-- Whether details are scraped
-- Proxy usage
+**Best Results**
+- Be specific with search queries ("italian restaurants" vs "food")
+- Always include location for targeted results
+- Use realistic `maxResults` values (Google Maps shows ~60-120 results per search)
 
-**Approximate costs**:
-- **50 businesses** (basic): ~$0.05 - $0.15
-- **100 businesses** (basic): ~$0.10 - $0.30
-- **50 businesses** (with details): ~$0.25 - $0.75
-- **100 businesses** (with details): ~$0.50 - $1.50
+## Data Accuracy
 
-*Costs are estimates and may vary.*
-
----
-
-## ⚙️ **Configuration Tips**
-
-### For Best Results
-
-1. **Always use proxy**: Use residential proxy configuration to avoid Google blocking
-2. **Start small**: Test with `maxResults: 10` first
-3. **Specific searches**: Use detailed queries ("italian restaurants in downtown Dubai")
-4. **Respect rate limits**: Use default delays (1-3 seconds)
-
-### Optimizing Performance
-
-1. **Skip details**: Set `scrapeDetails: false` for 5-10x faster scraping
-2. **Batch searches**: Run multiple smaller searches instead of one large search
-3. **Use location**: Always specify location for better results
-
-### Avoiding Blocks
-
-1. **Use residential proxy**: Enabled by default
-2. **Add delays**: Increase `minDelay` and `maxDelay` if needed
-3. **Low concurrency**: Actor uses concurrency=1 by default (safest)
-4. **Don't scrape too much**: Google may block if you scrape thousands at once
-
----
-
-## 🐛 **Troubleshooting**
-
-### No Results Found
-
-**Problem**: Actor completes but finds 0 businesses
-
-**Solutions**:
-1. Check your search query is valid
-2. Try adding a location
-3. Verify the location exists ("Dubaiiii" won't work)
-4. Try a more generic search ("food" instead of "vegan gluten-free organic restaurants")
-
-### Getting Blocked
-
-**Problem**: Actor fails with timeout or CAPTCHA errors
-
-**Solutions**:
-1. Ensure `proxyConfiguration.useApifyProxy: true` with `RESIDENTIAL` group
-2. Increase delays (`minDelay: 2`, `maxDelay: 5`)
-3. Reduce `maxResults`
-4. Try a different proxy country (`apifyProxyCountry: "US"`)
-5. Wait a few hours before trying again
-
-### Missing Data
-
-**Problem**: Some businesses don't have phone, address, etc.
-
-**Solutions**:
-1. Enable `scrapeDetails: true`
-2. Some businesses simply don't have all data
-3. Check if the business page loads manually
-
----
-
-## 📈 **Data Quality**
-
-### Completeness
-
-From **search results only** (`scrapeDetails: false`):
-- Name: 100%
-- URL: 100%
+**From Search Results:**
+- Name: ~100%
 - Rating: ~90%
 - Review Count: ~90%
-- Category: ~80%
-- Address Snippet: ~60%
 
-With **detail scraping** (`scrapeDetails: true`):
+**With Detail Extraction:**
 - Phone: ~70%
-- Full Address: ~95%
+- Address: ~95%
 - Website: ~60%
 - Hours: ~80%
-- All other fields: Higher accuracy
 
-### Accuracy
+*Some businesses don't list all information publicly.*
 
-- Data comes directly from Google Maps (official source)
-- Real-time extraction (always current)
-- No duplicates (URL-based deduplication)
+## Troubleshooting
 
----
+**No results returned?**
+- Verify the location exists and is spelled correctly
+- Try broader search terms
+- Check that businesses exist for your query in that area
 
-## 🔐 **Legal & Privacy**
+**Getting blocked?**
+- Ensure residential proxy is enabled
+- Increase delay settings
+- Reduce batch size
 
-### Important Notes
+**Missing contact details?**
+- Enable `scrapeDetails: true`
+- Some businesses simply don't list this information
 
-1. **Public Data Only**: This scraper only collects publicly available information from Google Maps
-2. **Google ToS**: Review Google's Terms of Service before large-scale scraping
-3. **Rate Limiting**: Use responsible scraping practices (proxies, delays)
-4. **Personal Data**: Be mindful of privacy regulations (GDPR, etc.) when storing/using data
-5. **Commercial Use**: Verify licensing requirements for your use case
+## Technical Details
 
-### Responsible Scraping
+**Stack:** Node.js, Puppeteer, Crawlee, Apify SDK
 
-- Use proxies to distribute load
-- Implement delays between requests
-- Don't overwhelm servers
-- Only scrape public data
-- Respect robots.txt
-- Use data ethically
+**Requirements:** Node.js 18+
 
----
+**Rate Limiting:** Single concurrent request (safest for Google Maps)
 
-## 🛠️ **Development**
+**Proxy:** Residential proxies strongly recommended
 
-### Project Structure
+## Project Structure
 
 ```
-google-maps-scraper/
 ├── .actor/
-│   ├── actor.json              # Actor metadata
-│   └── INPUT_SCHEMA.json       # Input configuration
-├── main.js                     # Main scraper logic
-├── package.json                # Dependencies
-├── Dockerfile                  # Docker configuration
-├── README.md                   # Documentation
-└── .gitignore                 # Git ignore rules
+│   ├── actor.json           # Actor configuration
+│   ├── INPUT_SCHEMA.json    # Input definition
+│   ├── dataset_schema.json  # Output schema
+│   └── key_value_store_schema.json
+├── main.js                  # Extraction logic
+├── package.json            
+├── Dockerfile              
+└── README.md               
 ```
 
-### Key Functions
+## Legal Notice
 
-- `constructGoogleMapsUrl()` - Builds search URL
-- `scrollSidebar()` - Handles infinite scroll
-- `extractBusinessListings()` - Extracts search results
-- `extractBusinessDetails()` - Scrapes detail pages
+This tool extracts publicly available information from Google Maps. Users are responsible for:
+- Complying with Google's Terms of Service
+- Following applicable data protection laws (GDPR, CCPA, etc.)
+- Using extracted data ethically and legally
 
-### Adding Features
+## Support
 
-Want to add review scraping, photos, or Q&A? The code is modular and easy to extend!
-
----
-
-## 📚 **Resources**
-
-- [Apify Documentation](https://docs.apify.com/)
-- [Crawlee Documentation](https://crawlee.dev/)
-- [Puppeteer Documentation](https://pptr.dev/)
-- [Google Maps](https://www.google.com/maps)
+Having issues? Check:
+1. Input parameters are valid
+2. Proxy configuration is correct
+3. Search returns results when done manually
+4. Actor logs for specific errors
 
 ---
 
-## 🤝 **Support**
-
-For issues or questions:
-
-1. Check this README
-2. Review the troubleshooting section
-3. Test with a small `maxResults` (10-20)
-4. Check Apify Console logs
-5. Verify your input parameters
-
----
-
-## 📄 **License**
-
-Apache-2.0
-
----
-
-## 🏷️ **Version**
-
-**Version**: 1.0.0
-**Last Updated**: 2025-11-18
-**Compatible with**: Apify SDK v3+, Crawlee v3+
-
----
-
-**Happy Scraping! 🎉**
-
-*Extract valuable business data from Google Maps with ease!*
+**Version:** 1.0.0  
+**Last Updated:** December 2025  
+**License:** Apache-2.0

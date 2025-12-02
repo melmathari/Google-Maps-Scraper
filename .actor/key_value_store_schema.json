@@ -1,0 +1,67 @@
+{
+    "actorKeyValueStoreSchemaVersion": 1,
+    "title": "Google Maps Extractor Storage",
+    "description": "Storage for Google Maps data extractor containing run configuration, extraction statistics, and output files.",
+    "collections": {
+        "input": {
+            "title": "Input",
+            "description": "Actor input configuration",
+            "key": "INPUT",
+            "contentTypes": ["application/json"]
+        },
+        "statistics": {
+            "title": "Run Statistics",
+            "description": "Statistics and metadata from scraping runs",
+            "keyPrefix": "STATS-",
+            "contentTypes": ["application/json"],
+            "jsonSchema": {
+                "type": "object",
+                "properties": {
+                    "totalBusinesses": {
+                        "type": "integer",
+                        "description": "Total number of businesses scraped"
+                    },
+                    "searchQuery": {
+                        "type": "string",
+                        "description": "Search query used"
+                    },
+                    "location": {
+                        "type": "string",
+                        "description": "Location searched"
+                    },
+                    "startedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "finishedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": ["running", "completed", "failed"]
+                    }
+                }
+            }
+        },
+        "exports": {
+            "title": "Exports",
+            "description": "Exported data files in various formats",
+            "keyPrefix": "EXPORT-",
+            "contentTypes": ["application/json", "text/csv", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]
+        },
+        "screenshots": {
+            "title": "Screenshots",
+            "description": "Screenshots captured during scraping",
+            "keyPrefix": "SCREENSHOT-",
+            "contentTypes": ["image/png", "image/jpeg"]
+        },
+        "errors": {
+            "title": "Error Logs",
+            "description": "Error logs and failed request details",
+            "keyPrefix": "ERROR-",
+            "contentTypes": ["application/json"]
+        }
+    }
+}
+

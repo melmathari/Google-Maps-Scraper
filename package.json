@@ -1,10 +1,10 @@
 {
-  "name": "google-maps-scraper",
+  "name": "google-maps-data-extractor",
   "version": "1.0.0",
   "type": "module",
-  "description": "Production-ready Apify Actor for scraping business listings and reviews from Google Maps",
+  "description": "Apify Actor to extract business listings, contact details, ratings, and reviews from Google Maps for any location worldwide",
   "main": "main.js",
-  "author": "Apify",
+  "author": "Software Buddy",
   "license": "Apache-2.0",
   "scripts": {
     "start": "node main.js",

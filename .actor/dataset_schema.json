@@ -1,0 +1,192 @@
+{
+    "actorSpecification": 1,
+    "title": "Google Maps Extracted Data",
+    "description": "Business data extracted from Google Maps including company names, star ratings, review counts, phone numbers, websites, physical addresses, and operating hours.",
+    "fields": {
+        "type": "object",
+        "properties": {
+            "name": {
+                "type": "string",
+                "description": "Business name"
+            },
+            "url": {
+                "type": "string",
+                "format": "uri",
+                "description": "Google Maps URL for the business"
+            },
+            "rating": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 5,
+                "description": "Average rating (0-5 stars)"
+            },
+            "reviewCount": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Total number of reviews"
+            },
+            "category": {
+                "type": "string",
+                "description": "Business category or type"
+            },
+            "address": {
+                "type": "string",
+                "description": "Full street address"
+            },
+            "phone": {
+                "type": "string",
+                "description": "Phone number"
+            },
+            "website": {
+                "type": "string",
+                "format": "uri",
+                "description": "Business website URL"
+            },
+            "hoursStatus": {
+                "type": "string",
+                "description": "Current open/closed status and hours"
+            },
+            "priceLevel": {
+                "type": "string",
+                "description": "Price level indicator"
+            },
+            "plusCode": {
+                "type": "string",
+                "description": "Google Plus Code for location"
+            },
+            "scrapedAt": {
+                "type": "string",
+                "format": "date-time",
+                "description": "Timestamp when the data was scraped"
+            }
+        },
+        "required": ["name", "url", "scrapedAt"]
+    },
+    "views": {
+        "overview": {
+            "title": "Overview",
+            "transformation": {
+                "fields": [
+                    "name",
+                    "rating",
+                    "reviewCount",
+                    "category",
+                    "address",
+                    "phone",
+                    "website",
+                    "url"
+                ]
+            },
+            "display": {
+                "component": "table",
+                "properties": {
+                    "name": {
+                        "label": "Business Name",
+                        "format": "text"
+                    },
+                    "rating": {
+                        "label": "Rating",
+                        "format": "number"
+                    },
+                    "reviewCount": {
+                        "label": "Reviews",
+                        "format": "number"
+                    },
+                    "category": {
+                        "label": "Category",
+                        "format": "text"
+                    },
+                    "address": {
+                        "label": "Address",
+                        "format": "text"
+                    },
+                    "phone": {
+                        "label": "Phone",
+                        "format": "text"
+                    },
+                    "website": {
+                        "label": "Website",
+                        "format": "link"
+                    },
+                    "url": {
+                        "label": "Google Maps URL",
+                        "format": "link"
+                    }
+                }
+            }
+        },
+        "detailed": {
+            "title": "Detailed View",
+            "transformation": {
+                "fields": [
+                    "name",
+                    "rating",
+                    "reviewCount",
+                    "category",
+                    "address",
+                    "phone",
+                    "website",
+                    "hoursStatus",
+                    "priceLevel",
+                    "plusCode",
+                    "url",
+                    "scrapedAt"
+                ]
+            },
+            "display": {
+                "component": "table",
+                "properties": {
+                    "name": {
+                        "label": "Business Name",
+                        "format": "text"
+                    },
+                    "rating": {
+                        "label": "Rating",
+                        "format": "number"
+                    },
+                    "reviewCount": {
+                        "label": "Reviews",
+                        "format": "number"
+                    },
+                    "category": {
+                        "label": "Category",
+                        "format": "text"
+                    },
+                    "address": {
+                        "label": "Address",
+                        "format": "text"
+                    },
+                    "phone": {
+                        "label": "Phone",
+                        "format": "text"
+                    },
+                    "website": {
+                        "label": "Website",
+                        "format": "link"
+                    },
+                    "hoursStatus": {
+                        "label": "Hours",
+                        "format": "text"
+                    },
+                    "priceLevel": {
+                        "label": "Price Level",
+                        "format": "text"
+                    },
+                    "plusCode": {
+                        "label": "Plus Code",
+                        "format": "text"
+                    },
+                    "url": {
+                        "label": "Google Maps URL",
+                        "format": "link"
+                    },
+                    "scrapedAt": {
+                        "label": "Scraped At",
+                        "format": "date"
+                    }
+                }
+            }
+        }
+    }
+}
+
