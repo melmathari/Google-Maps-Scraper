@@ -22,10 +22,9 @@
     "maxResults": {
       "title": "Maximum Results",
       "type": "integer",
-      "description": "Maximum number of businesses to scrape (1-500)",
+      "description": "Maximum number of businesses to scrape. Set to 0 for unlimited. Default is 100.",
       "editor": "number",
-      "minimum": 1,
-      "maximum": 500,
+      "minimum": 0,
       "default": 100,
       "unit": "businesses"
     },
