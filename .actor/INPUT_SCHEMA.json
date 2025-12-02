@@ -36,12 +36,19 @@
       "editor": "checkbox",
       "default": false
     },
-    "proxy": {
-      "title": "Use Proxy",
-      "type": "boolean",
-      "description": "Use Apify residential proxy to avoid blocking. Highly recommended for Google Maps.",
-      "editor": "checkbox",
-      "default": true
+    "proxyConfiguration": {
+      "title": "Proxy Configuration",
+      "type": "object",
+      "description": "Proxy settings for the scraper. Residential proxies are highly recommended for Google Maps to avoid blocking.",
+      "editor": "proxy",
+      "prefill": {
+        "useApifyProxy": true,
+        "apifyProxyGroups": ["RESIDENTIAL"]
+      },
+      "default": {
+        "useApifyProxy": true,
+        "apifyProxyGroups": ["RESIDENTIAL"]
+      }
     },
     "minDelay": {
       "title": "Minimum Delay (seconds)",

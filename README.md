@@ -73,9 +73,26 @@ Perfect for:
 | `location` | string | No | - | Where to search (e.g., "Dubai", "Kuwait City") |
 | `maxResults` | integer | No | 100 | Maximum businesses to scrape (1-500) |
 | `scrapeDetails` | boolean | No | false | Visit each business page for detailed info |
-| `proxy` | boolean | No | true | Use Apify proxy (highly recommended) |
+| `proxyConfiguration` | object | No | See below | Proxy settings (residential recommended) |
 | `minDelay` | integer | No | 1 | Minimum delay between actions (seconds) |
 | `maxDelay` | integer | No | 3 | Maximum delay between actions (seconds) |
+
+### Proxy Configuration Options
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `useApifyProxy` | boolean | Use Apify's proxy service |
+| `apifyProxyGroups` | array | Proxy groups to use (e.g., `["RESIDENTIAL"]`, `["SHADER"]`) |
+| `apifyProxyCountry` | string | Country code for proxy (e.g., `"US"`, `"GB"`, `"AE"`) |
+| `proxyUrls` | array | Custom proxy URLs (when not using Apify proxy) |
+
+**Default proxy configuration:**
+```json
+{
+  "useApifyProxy": true,
+  "apifyProxyGroups": ["RESIDENTIAL"]
+}
+```
 
 ## 📖 **Usage Examples**
 
@@ -86,7 +103,10 @@ Perfect for:
   "searchQuery": "restaurants",
   "location": "Dubai, UAE",
   "maxResults": 50,
-  "proxy": true
+  "proxyConfiguration": {
+    "useApifyProxy": true,
+    "apifyProxyGroups": ["RESIDENTIAL"]
+  }
 }
 ```
 
@@ -102,7 +122,10 @@ Perfect for:
   "location": "Kuwait City",
   "maxResults": 30,
   "scrapeDetails": true,
-  "proxy": true
+  "proxyConfiguration": {
+    "useApifyProxy": true,
+    "apifyProxyGroups": ["RESIDENTIAL"]
+  }
 }
 ```
 
@@ -110,17 +133,21 @@ Perfect for:
 
 ---
 
-### Example 3: Coffee Shops in Bahrain
+### Example 3: Coffee Shops in Bahrain (with US Proxy)
 
 ```json
 {
   "searchQuery": "coffee shops in Manama",
   "maxResults": 20,
-  "proxy": true
+  "proxyConfiguration": {
+    "useApifyProxy": true,
+    "apifyProxyGroups": ["RESIDENTIAL"],
+    "apifyProxyCountry": "US"
+  }
 }
 ```
 
-**Output**: 20 coffee shops in Manama (location auto-detected from query).
+**Output**: 20 coffee shops in Manama (using US-based residential proxy).
 
 ---
 
@@ -175,7 +202,10 @@ cat > input.json << EOF
   "searchQuery": "restaurants",
   "location": "Dubai",
   "maxResults": 20,
-  "proxy": true
+  "proxyConfiguration": {
+    "useApifyProxy": true,
+    "apifyProxyGroups": ["RESIDENTIAL"]
+  }
 }
 EOF
 

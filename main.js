@@ -254,7 +254,7 @@ await Actor.main(async () => {
         location = null,
         maxResults = 100,
         scrapeDetails = false,
-        proxy = true,
+        proxyConfiguration: proxyConfig = { useApifyProxy: true, apifyProxyGroups: ['RESIDENTIAL'] },
         minDelay = 1,
         maxDelay = 3
     } = input;
@@ -269,7 +269,13 @@ await Actor.main(async () => {
     console.log(`📍 Location: ${location || 'Not specified'}`);
     console.log(`🎯 Max results: ${maxResults}`);
     console.log(`📄 Scrape details: ${scrapeDetails ? 'Yes' : 'No'}`);
-    console.log(`🔒 Use proxy: ${proxy ? 'Yes' : 'No'}`);
+    console.log(`🔒 Use Apify proxy: ${proxyConfig?.useApifyProxy ? 'Yes' : 'No'}`);
+    if (proxyConfig?.useApifyProxy) {
+        console.log(`   Proxy groups: ${proxyConfig.apifyProxyGroups?.join(', ') || 'AUTO'}`);
+        if (proxyConfig.apifyProxyCountry) {
+            console.log(`   Proxy country: ${proxyConfig.apifyProxyCountry}`);
+        }
+    }
 
     // Construct Google Maps URL
     const startUrl = constructGoogleMapsUrl(searchQuery, location);
@@ -280,9 +286,17 @@ await Actor.main(async () => {
     const scrapedUrls = new Set();
 
     // Configure proxy
-    const proxyConfiguration = proxy ? await Actor.createProxyConfiguration({
-        groups: ['RESIDENTIAL']
-    }) : undefined;
+    let proxyConfiguration;
+    if (proxyConfig?.useApifyProxy) {
+        proxyConfiguration = await Actor.createProxyConfiguration({
+            groups: proxyConfig.apifyProxyGroups,
+            countryCode: proxyConfig.apifyProxyCountry
+        });
+    } else if (proxyConfig?.proxyUrls?.length > 0) {
+        proxyConfiguration = await Actor.createProxyConfiguration({
+            proxyUrls: proxyConfig.proxyUrls
+        });
+    }
 
     // Create crawler
     const crawler = new PuppeteerCrawler({
