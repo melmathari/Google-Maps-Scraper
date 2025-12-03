@@ -27,6 +27,7 @@ await Actor.main(async () => {
         proxyConfiguration: proxyConfig = { useApifyProxy: true, apifyProxyGroups: ['RESIDENTIAL'] },
         minDelay = 1,
         maxDelay = 3,
+        language = 'en',
         debugScreenshots = false,
         skipSponsored = false,
         skipWithWebsite = false,
@@ -58,6 +59,7 @@ await Actor.main(async () => {
     console.log(`📄 Scrape details: ${scrapeDetails ? 'Yes' : 'No'}`);
     console.log(`🔒 Use Apify proxy: ${proxyConfig?.useApifyProxy ? 'Yes' : 'No'}`);
     console.log(`📸 Debug screenshots: ${debugScreenshots ? 'Yes' : 'No'}`);
+    console.log(`🌐 Language: ${language}`);
     console.log(`🚫 Skip sponsored: ${skipSponsored ? 'Yes' : 'No'}`);
     console.log(`🚫 Skip with website: ${skipWithWebsite ? 'Yes' : 'No'}`);
     console.log(`🚫 Skip with phone: ${skipWithPhone ? 'Yes' : 'No'}`);
@@ -75,7 +77,7 @@ await Actor.main(async () => {
     }
 
     // Construct Google Maps URL
-    const startUrl = constructGoogleMapsUrl(searchQuery, location);
+    const startUrl = constructGoogleMapsUrl(searchQuery, location, language);
     console.log(`🌐 Starting URL: ${startUrl}`);
 
     // Track scraped businesses

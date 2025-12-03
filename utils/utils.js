@@ -12,9 +12,10 @@ export async function randomDelay(min, max) {
  * Construct Google Maps search URL
  * @param {string} searchQuery - What to search for (e.g., "restaurants in Dubai")
  * @param {string} location - Optional location override
+ * @param {string} language - Language code (e.g., 'en', 'ar', 'fr')
  * @returns {string} Google Maps search URL
  */
-export function constructGoogleMapsUrl(searchQuery, location = null) {
+export function constructGoogleMapsUrl(searchQuery, location = null, language = 'en') {
     const baseUrl = 'https://www.google.com/maps/search/';
 
     let query = searchQuery.trim();
@@ -22,8 +23,9 @@ export function constructGoogleMapsUrl(searchQuery, location = null) {
         query = `${query} in ${location.trim()}`;
     }
 
-    // Force English language with hl=en parameter
-    return `${baseUrl}${encodeURIComponent(query)}?hl=en`;
+    // Set language with hl parameter (defaults to English)
+    const lang = language && language.trim() ? language.trim() : 'en';
+    return `${baseUrl}${encodeURIComponent(query)}?hl=${lang}`;
 }
 
 /**

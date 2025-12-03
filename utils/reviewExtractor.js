@@ -232,19 +232,43 @@ async function clickReviewsTab(page, log) {
 
 /**
  * Extract reviews from the current page using Google Maps CSS classes
+ * Uses star ratings to find review containers (same method as counting)
  */
 async function extractReviewsFromPage(page, maxReviews, log) {
     const reviews = await page.evaluate((max) => {
         const results = [];
+        const processedContainers = new Set();
         
-        // Find review containers - Google Maps uses .jftiEf for review containers
-        // Each review container has the reviewer info, rating, text, etc.
-        const reviewContainers = document.querySelectorAll('.jftiEf');
+        // Find all star rating elements - same approach as countReviews()
+        const starElements = document.querySelectorAll('span[role="img"][aria-label*="star"]');
         
-        for (const container of reviewContainers) {
+        for (const starEl of starElements) {
             if (results.length >= max) break;
             
             try {
+                // Find the review container by going up from the star rating
+                // Same logic as countReviews() - go up 8 levels max looking for container
+                let container = starEl.parentElement;
+                for (let i = 0; i < 8 && container; i++) {
+                    if (container.offsetHeight > 80 && container.offsetHeight < 500) {
+                        break;
+                    }
+                    container = container.parentElement;
+                }
+                
+                if (!container || processedContainers.has(container)) continue;
+                processedContainers.add(container);
+                
+                // === STAR RATING ===
+                let rating = null;
+                const ratingMatch = starEl.getAttribute('aria-label')?.match(/(\d+)\s*star/i);
+                if (ratingMatch) {
+                    rating = parseInt(ratingMatch[1]);
+                }
+                
+                // Skip if rating is not 1-5 (not a review star)
+                if (rating === null || rating < 1 || rating > 5) continue;
+                
                 // === REVIEWER NAME ===
                 // Google uses .d4r55 class for reviewer names
                 let reviewerName = null;
@@ -270,16 +294,6 @@ async function extractReviewsFromPage(page, maxReviews, log) {
                 const subtitleEl = container.querySelector('.RfnDt');
                 if (subtitleEl) {
                     reviewerSubtitle = subtitleEl.textContent?.trim();
-                }
-                
-                // === STAR RATING ===
-                let rating = null;
-                const starEl = container.querySelector('span[role="img"][aria-label*="star"]');
-                if (starEl) {
-                    const ratingMatch = starEl.getAttribute('aria-label')?.match(/(\d+)\s*star/i);
-                    if (ratingMatch) {
-                        rating = parseInt(ratingMatch[1]);
-                    }
                 }
                 
                 // === REVIEW DATE ===

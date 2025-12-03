@@ -69,6 +69,14 @@
       "default": 3,
       "unit": "seconds"
     },
+    "language": {
+      "title": "Language",
+      "type": "string",
+      "description": "Language code for Google Maps results (e.g., 'en' for English, 'ar' for Arabic, 'fr' for French). Uses Google's hl parameter.",
+      "editor": "textfield",
+      "example": "en",
+      "default": "en"
+    },
     "debugScreenshots": {
       "title": "Debug Screenshots",
       "type": "boolean",
