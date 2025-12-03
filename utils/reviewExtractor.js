@@ -207,21 +207,14 @@ async function clickReviewsTab(page, log) {
         if (clicked) {
             log.info(`✓ Clicked reviews panel (method: ${clicked})`);
             
-            // Wait for reviews to actually load
+            // Wait for reviews to start loading (brief wait, scrolling will load more)
             try {
-                await page.waitForSelector('.jftiEf.fontBodyMedium, div[data-review-id], button[aria-label^="Photo of"]', { 
-                    timeout: 15000 
+                await page.waitForSelector('.jftiEf.fontBodyMedium, div[data-review-id], button[aria-label^="Photo of"], span[role="img"][aria-label*="star"]', { 
+                    timeout: 10000 
                 });
-                log.info(`✓ Reviews loaded successfully`);
             } catch (waitError) {
-                log.warning(`Reviews may not have loaded fully: ${waitError.message}`);
-                // Check if we have any reviews anyway
-                const hasReviews = await page.evaluate(() => {
-                    return document.querySelectorAll('.jftiEf, div[data-review-id]').length > 0;
-                });
-                if (!hasReviews) {
-                    log.warning('No reviews found on page');
-                }
+                // Don't warn here - scrolling will load reviews
+                log.debug(`Initial review selector wait: ${waitError.message}`);
             }
             
             await randomDelay(2000, 3000);
