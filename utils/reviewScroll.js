@@ -50,6 +50,49 @@ export async function scrollReviewsPanel(page, maxReviews, log = console) {
             // IMPORTANT: The reviews panel is a specific scrollable container
             // It's typically a div with overflow-y: auto/scroll that contains the reviews
             
+            // Method 0: Use the exact XPath (most reliable)
+            const reviewsXPath = '/html/body/div[1]/div[2]/div[9]/div[9]/div/div/div[1]/div[3]/div/div[1]/div/div/div[3]';
+            const xpathResult = document.evaluate(reviewsXPath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+            const xpathContainer = xpathResult.singleNodeValue;
+            
+            if (xpathContainer && xpathContainer.scrollHeight > xpathContainer.clientHeight) {
+                const prevTop = xpathContainer.scrollTop;
+                xpathContainer.scrollTop = xpathContainer.scrollHeight;
+                return { 
+                    height: xpathContainer.scrollHeight, 
+                    found: true, 
+                    scrolled: xpathContainer.scrollTop > prevTop,
+                    method: 'xpath-exact'
+                };
+            }
+            
+            // Method 0b: Try variations of the XPath (Google sometimes changes the structure slightly)
+            const xpathVariations = [
+                '/html/body/div[1]/div[2]/div[9]/div[9]/div/div/div[1]/div[3]/div/div[1]/div/div/div[3]',
+                '/html/body/div[2]/div[9]/div[9]/div/div/div[1]/div[3]/div/div[1]/div/div/div[3]',
+                '//div[@role="main"]//div[contains(@class, "m6QErb")]',
+                '//div[contains(@class, "DxyBCb") and contains(@class, "kA9KIf")]',
+            ];
+            
+            for (const xpath of xpathVariations) {
+                try {
+                    const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+                    const container = result.singleNodeValue;
+                    if (container && container.scrollHeight > container.clientHeight + 50) {
+                        const prevTop = container.scrollTop;
+                        container.scrollTop = container.scrollHeight;
+                        return { 
+                            height: container.scrollHeight, 
+                            found: true, 
+                            scrolled: container.scrollTop > prevTop,
+                            method: 'xpath-variation'
+                        };
+                    }
+                } catch (e) {
+                    // XPath evaluation failed, try next
+                }
+            }
+            
             // Method 1: Find the scrollable parent of review elements
             const reviewElement = document.querySelector('[data-review-id]') || 
                                  document.querySelector('div.jftiEf') ||
