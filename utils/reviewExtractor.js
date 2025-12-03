@@ -26,8 +26,13 @@ export async function extractReviewsFromListing(page, business, maxReviews, extr
         // Wait for the sidebar to load
         await waitForSidebar(page, log);
         
-        // Click on "More reviews" button to expand reviews panel
-        await clickMoreReviewsButton(page, log);
+        // Click on Reviews tab to open reviews panel
+        const reviewsOpened = await clickReviewsTab(page, log);
+        if (!reviewsOpened) {
+            log.warning(`Could not open reviews tab for: ${business.name}`);
+            await closeSidebar(page, log);
+            return [];
+        }
         await randomDelay(2000, 3000);
         
         // Scroll to load more reviews
@@ -171,10 +176,10 @@ async function waitForSidebar(page, log) {
     try {
         // Wait for the sidebar to appear with business details
         await page.waitForFunction(() => {
-            // Look for h1 (business name) or reviews tab button
+            // Look for h1 (business name) or tabs
             const h1 = document.querySelector('h1');
-            const reviewsTab = document.querySelector('button[aria-label*="Reviews"], [role="tab"][aria-label*="Reviews"]');
-            return h1 || reviewsTab;
+            const tabs = document.querySelectorAll('[role="tab"]');
+            return h1 || tabs.length > 0;
         }, { timeout: 15000 });
     } catch (error) {
         log.warning(`Sidebar may not have loaded fully: ${error.message}`);
@@ -182,43 +187,73 @@ async function waitForSidebar(page, log) {
 }
 
 /**
- * Click on the "More reviews" button to open the full reviews panel
+ * Click on the Reviews tab to open the reviews panel
  * @param {Object} page - Puppeteer page
  * @param {Object} log - Logger instance
  * @returns {boolean} Whether the click was successful
  */
-async function clickMoreReviewsButton(page, log) {
+async function clickReviewsTab(page, log) {
     try {
         const clicked = await page.evaluate(() => {
-            // Look for "More reviews (X)" button
+            // Method 1: Find tab with role="tab" containing "Reviews" in aria-label or text
+            const tabs = document.querySelectorAll('[role="tab"]');
+            for (const tab of tabs) {
+                const ariaLabel = tab.getAttribute('aria-label') || '';
+                const textContent = tab.textContent || '';
+                if (ariaLabel.toLowerCase().includes('reviews') || textContent.toLowerCase().includes('reviews')) {
+                    tab.click();
+                    return 'tab-role';
+                }
+            }
+            
+            // Method 2: Look for buttons containing "Reviews" text
             const buttons = document.querySelectorAll('button');
+            for (const btn of buttons) {
+                const ariaLabel = btn.getAttribute('aria-label') || '';
+                const textContent = btn.textContent || '';
+                // Skip "Write a review" buttons
+                if (textContent.toLowerCase().includes('write')) continue;
+                
+                if (ariaLabel.toLowerCase().includes('reviews') || 
+                    (textContent.toLowerCase().includes('reviews') && !textContent.toLowerCase().includes('more reviews'))) {
+                    btn.click();
+                    return 'button-reviews';
+                }
+            }
+            
+            // Method 3: Look for "More reviews" button
             for (const btn of buttons) {
                 const ariaLabel = btn.getAttribute('aria-label') || '';
                 const textContent = btn.textContent || '';
                 if (ariaLabel.includes('More reviews') || textContent.includes('More reviews')) {
                     btn.click();
-                    return true;
+                    return 'more-reviews';
                 }
             }
             
-            // Also try clicking on the reviews tab
-            const reviewsTab = document.querySelector('button[aria-label*="Reviews"], [role="tab"][aria-label*="Reviews"]');
-            if (reviewsTab) {
-                reviewsTab.click();
-                return true;
+            // Method 4: Look for review count button (e.g., "333 reviews")
+            for (const btn of buttons) {
+                const ariaLabel = btn.getAttribute('aria-label') || '';
+                const textContent = btn.textContent || '';
+                if (/\d+\s*reviews?/i.test(ariaLabel) || /\d+\s*reviews?/i.test(textContent)) {
+                    btn.click();
+                    return 'review-count';
+                }
             }
             
             return false;
         });
         
         if (clicked) {
-            log.info('✓ Opened reviews panel');
+            log.info(`✓ Opened reviews panel (method: ${clicked})`);
             await randomDelay(2000, 3000);
+            return true;
         }
         
-        return clicked;
+        log.warning('Could not find Reviews tab or button');
+        return false;
     } catch (error) {
-        log.warning(`Error clicking More reviews: ${error.message}`);
+        log.warning(`Error clicking Reviews tab: ${error.message}`);
         return false;
     }
 }
@@ -236,11 +271,44 @@ async function scrollReviewsPanel(page, maxReviews, log) {
     let noChangeCount = 0;
     
     while (scrollCount < maxScrolls) {
-        // Count current reviews
+        // Count current reviews using multiple methods
         const currentCount = await page.evaluate(() => {
-            // Count reviews by share buttons (each review has one)
-            const shareButtons = document.querySelectorAll('button[aria-label*="Share"][aria-label*="review"]');
-            return shareButtons.length;
+            // Method 1: Count by share buttons (look for buttons with "Share X's review" pattern)
+            let count = 0;
+            const buttons = document.querySelectorAll('button');
+            for (const btn of buttons) {
+                const ariaLabel = btn.getAttribute('aria-label') || '';
+                const dataTooltip = btn.getAttribute('data-tooltip') || '';
+                // Match "Share [Name]'s review" pattern
+                if (/share\s+.+['']s\s+review/i.test(ariaLabel) || /share\s+.+['']s\s+review/i.test(dataTooltip)) {
+                    count++;
+                }
+            }
+            
+            // Method 2: If no buttons found, count by "Actions for X's review" pattern
+            if (count === 0) {
+                for (const btn of buttons) {
+                    const ariaLabel = btn.getAttribute('aria-label') || '';
+                    if (/actions\s+for\s+.+['']s\s+review/i.test(ariaLabel)) {
+                        count++;
+                    }
+                }
+            }
+            
+            // Method 3: Count star rating images within review context
+            if (count === 0) {
+                // Look for individual review star ratings (not the overall rating)
+                const starImgs = document.querySelectorAll('[role="img"]');
+                for (const img of starImgs) {
+                    const ariaLabel = img.getAttribute('aria-label') || '';
+                    // Match "X stars" but not "X stars, Y reviews" (that's the distribution chart)
+                    if (/^\d\s+stars?$/i.test(ariaLabel.trim())) {
+                        count++;
+                    }
+                }
+            }
+            
+            return count;
         });
         
         if (currentCount >= maxReviews) {
@@ -258,32 +326,40 @@ async function scrollReviewsPanel(page, maxReviews, log) {
         } else {
             noChangeCount = 0;
             previousCount = currentCount;
+            log.debug(`📜 Loaded ${currentCount} reviews so far...`);
         }
         
         // Scroll the reviews container
         await page.evaluate(() => {
-            // Find the scrollable container for reviews
-            const containers = [
-                document.querySelector('[role="main"]'),
-                document.querySelector('.section-scrollbox'),
-                document.querySelector('[data-tab-index="1"]'),
+            // Find the scrollable container - it's usually the main content area in the side panel
+            const scrollableSelectors = [
+                '[role="main"]',
+                '.section-scrollbox',
+                '[tabindex="-1"]', // Often the scrollable container
             ];
             
-            for (const container of containers) {
+            // Try specific selectors first
+            for (const selector of scrollableSelectors) {
+                const container = document.querySelector(selector);
                 if (container && container.scrollHeight > container.clientHeight) {
                     container.scrollTop = container.scrollHeight;
-                    return;
+                    return true;
                 }
             }
             
-            // Fallback: try scrolling any scrollable div
-            const scrollables = document.querySelectorAll('div[style*="overflow"]');
-            for (const el of scrollables) {
-                if (el.scrollHeight > el.clientHeight) {
-                    el.scrollTop = el.scrollHeight;
-                    return;
+            // Fallback: find any scrollable div with overflow
+            const allDivs = document.querySelectorAll('div');
+            for (const div of allDivs) {
+                const style = window.getComputedStyle(div);
+                const isScrollable = (style.overflowY === 'auto' || style.overflowY === 'scroll') &&
+                                    div.scrollHeight > div.clientHeight;
+                if (isScrollable && div.scrollHeight > 500) {
+                    div.scrollTop = div.scrollHeight;
+                    return true;
                 }
             }
+            
+            return false;
         });
         
         await randomDelay(1500, 2500);
@@ -301,48 +377,68 @@ async function scrollReviewsPanel(page, maxReviews, log) {
 async function extractReviewsFromPage(page, maxReviews, log) {
     const reviews = await page.evaluate((max) => {
         const results = [];
+        const processedNames = new Set();
         
-        // Find all share buttons for reviews (each review has one)
-        const shareButtons = document.querySelectorAll('button[aria-label*="Share"][aria-label*="review"]');
+        // Find all buttons and look for share buttons or actions buttons
+        const buttons = document.querySelectorAll('button');
+        const reviewerButtons = [];
         
-        for (const shareBtn of shareButtons) {
+        for (const btn of buttons) {
+            const ariaLabel = btn.getAttribute('aria-label') || '';
+            const dataTooltip = btn.getAttribute('data-tooltip') || '';
+            const label = ariaLabel || dataTooltip;
+            
+            // Match "Share [Name]'s review" or "Actions for [Name]'s review"
+            const shareMatch = label.match(/share\s+(.+?)['']s\s+review/i);
+            const actionsMatch = label.match(/actions\s+for\s+(.+?)['']s\s+review/i);
+            
+            if (shareMatch || actionsMatch) {
+                const reviewerName = (shareMatch ? shareMatch[1] : actionsMatch[1]).trim();
+                if (!processedNames.has(reviewerName.toLowerCase())) {
+                    processedNames.add(reviewerName.toLowerCase());
+                    reviewerButtons.push({ btn, reviewerName, isShare: !!shareMatch });
+                }
+            }
+        }
+        
+        for (const { btn, reviewerName, isShare } of reviewerButtons) {
             if (results.length >= max) break;
             
             try {
-                // Get reviewer name from share button label: "Share [Name]'s review"
-                const shareBtnLabel = shareBtn.getAttribute('aria-label') || '';
-                const nameMatch = shareBtnLabel.match(/Share\s+(.+?)['']s\s+review/i);
-                if (!nameMatch) continue;
-                
-                const reviewerName = nameMatch[1].trim();
-                
                 // Find the parent review container by walking up the DOM
-                let reviewContainer = shareBtn;
-                for (let i = 0; i < 10 && reviewContainer; i++) {
+                let reviewContainer = btn;
+                for (let i = 0; i < 15 && reviewContainer; i++) {
                     reviewContainer = reviewContainer.parentElement;
-                    const name = reviewContainer?.getAttribute('aria-label');
-                    if (name && name.toLowerCase().includes(reviewerName.toLowerCase())) {
+                    // Look for container that has the reviewer name as attribute
+                    const containerAriaLabel = reviewContainer?.getAttribute('aria-label') || '';
+                    if (containerAriaLabel && containerAriaLabel.toLowerCase().includes(reviewerName.toLowerCase())) {
                         break;
+                    }
+                    // Also check if it's a large enough container
+                    if (reviewContainer && reviewContainer.clientHeight > 100) {
+                        // Check if this container has the star rating img
+                        const hasRating = reviewContainer.querySelector('[role="img"][aria-label*="star"]');
+                        if (hasRating) break;
                     }
                 }
                 
                 if (!reviewContainer) {
-                    reviewContainer = shareBtn.parentElement?.parentElement?.parentElement?.parentElement?.parentElement;
+                    reviewContainer = btn.parentElement?.parentElement?.parentElement?.parentElement?.parentElement?.parentElement;
                 }
                 
                 // Extract reviewer subtitle (e.g., "Local Guide · 26 reviews · 3 photos")
                 let reviewerSubtitle = null;
-                const buttons = reviewContainer?.querySelectorAll('button') || [];
-                for (const btn of buttons) {
-                    const label = btn.getAttribute('aria-label') || '';
-                    // Look for button with reviewer info pattern
-                    if (label.includes('review') && !label.includes('Actions') && !label.includes('Share') && !label.includes('Photo')) {
-                        // Extract everything after the name
-                        const subtitleParts = label.split(/Local Guide|·/i);
-                        if (subtitleParts.length > 1) {
-                            // Reconstruct subtitle from parts after name
-                            const nameEndIdx = label.toLowerCase().indexOf(reviewerName.toLowerCase()) + reviewerName.length;
-                            reviewerSubtitle = label.substring(nameEndIdx).trim().replace(/^[·\s]+/, '');
+                const containerButtons = reviewContainer?.querySelectorAll('button') || [];
+                for (const cbtn of containerButtons) {
+                    const label = cbtn.getAttribute('aria-label') || '';
+                    // Look for button with reviewer info pattern (contains name + Local Guide or reviews/photos)
+                    if ((label.includes('Local Guide') || /\d+\s+reviews?/i.test(label)) && 
+                        label.toLowerCase().includes(reviewerName.toLowerCase()) &&
+                        !label.includes('Actions') && !label.includes('Share')) {
+                        // Extract subtitle (everything after the name)
+                        const nameIdx = label.toLowerCase().indexOf(reviewerName.toLowerCase());
+                        if (nameIdx !== -1) {
+                            reviewerSubtitle = label.substring(nameIdx + reviewerName.length).trim().replace(/^[·\s]+/, '');
                         }
                         break;
                     }
@@ -350,66 +446,59 @@ async function extractReviewsFromPage(page, maxReviews, log) {
                 
                 // Extract rating from img with "X stars" aria-label
                 let rating = null;
-                const ratingImgs = reviewContainer?.querySelectorAll('img[aria-label*="star"], [role="img"][aria-label*="star"]') || [];
+                const ratingImgs = reviewContainer?.querySelectorAll('[role="img"], img') || [];
                 for (const img of ratingImgs) {
                     const label = img.getAttribute('aria-label') || '';
-                    const ratingMatch = label.match(/(\d+)\s*star/i);
+                    // Match just "X stars" not "X stars, Y reviews"
+                    const ratingMatch = label.match(/^(\d)\s+stars?$/i);
                     if (ratingMatch) {
                         rating = parseInt(ratingMatch[1]);
                         break;
                     }
                 }
                 
-                // Extract review text
-                // The text is usually in a span with the actual review content
+                // Extract review text - look for spans with substantial text
                 let reviewText = null;
-                const textElements = reviewContainer?.querySelectorAll('span.wiI7pd, span[data-expandable-section], span.MyEned') || [];
-                for (const el of textElements) {
-                    const text = el.textContent?.trim();
-                    if (text && text.length > 10) {
-                        reviewText = text;
-                        break;
+                const allSpans = reviewContainer?.querySelectorAll('span') || [];
+                let longestText = '';
+                
+                for (const span of allSpans) {
+                    const text = span.textContent?.trim() || '';
+                    // Skip UI elements, dates, and metadata
+                    if (text.length < 20) continue;
+                    if (/^\d+\s*(review|photo|like)/i.test(text)) continue;
+                    if (text.includes('Local Guide')) continue;
+                    if (/\d+\s*(day|week|month|year|hour|minute)s?\s*ago/i.test(text)) continue;
+                    if (text === reviewerName) continue;
+                    
+                    // Keep track of longest text as likely review content
+                    if (text.length > longestText.length) {
+                        longestText = text;
                     }
                 }
                 
-                // Fallback: look for longest text span
-                if (!reviewText) {
-                    const allSpans = reviewContainer?.querySelectorAll('span') || [];
-                    let longestText = '';
-                    for (const span of allSpans) {
-                        const text = span.textContent?.trim() || '';
-                        // Skip short texts and UI elements
-                        if (text.length > 30 && 
-                            text.length > longestText.length &&
-                            !text.includes('Local Guide') &&
-                            !text.match(/^\d+\s*(review|photo|like)/i)) {
-                            longestText = text;
-                        }
-                    }
-                    if (longestText) {
-                        reviewText = longestText;
+                if (longestText) {
+                    reviewText = longestText;
+                }
+                
+                // Extract review date (e.g., "2 months ago", "a month ago")
+                let reviewDate = null;
+                for (const span of allSpans) {
+                    const text = span.textContent?.trim() || '';
+                    if (/\d+\s*(day|week|month|year|hour|minute)s?\s*ago/i.test(text) || 
+                        /^(a|an)\s+(day|week|month|year|hour|minute)\s+ago/i.test(text)) {
+                        reviewDate = text;
+                        break;
                     }
                 }
                 
                 // Extract likes count
                 let likesCount = null;
-                for (const btn of buttons) {
-                    const label = btn.getAttribute('aria-label') || btn.textContent || '';
+                for (const cbtn of containerButtons) {
+                    const label = cbtn.getAttribute('aria-label') || cbtn.textContent || '';
                     const likesMatch = label.match(/(\d+)\s*like/i);
                     if (likesMatch) {
                         likesCount = parseInt(likesMatch[1]);
-                        break;
-                    }
-                }
-                
-                // Extract review date (e.g., "2 months ago")
-                let reviewDate = null;
-                const dateSpans = reviewContainer?.querySelectorAll('span.rsqaWe, span[class*="date"]') || [];
-                for (const span of dateSpans) {
-                    const text = span.textContent?.trim() || '';
-                    if (text.match(/\d+\s*(day|week|month|year|hour|minute)s?\s*ago/i) || 
-                        text.match(/^(a|an)\s+(day|week|month|year|hour|minute)\s*ago/i)) {
-                        reviewDate = text;
                         break;
                     }
                 }
@@ -447,11 +536,14 @@ async function extractShareLinksForReviews(page, reviews, log) {
         try {
             // Click the share button for this review
             const clicked = await page.evaluate((reviewerName) => {
-                // Find the share button for this reviewer
-                const shareButtons = document.querySelectorAll('button[aria-label*="Share"][aria-label*="review"]');
-                for (const btn of shareButtons) {
-                    const label = btn.getAttribute('aria-label') || '';
-                    if (label.toLowerCase().includes(reviewerName.toLowerCase())) {
+                const buttons = document.querySelectorAll('button');
+                for (const btn of buttons) {
+                    const ariaLabel = btn.getAttribute('aria-label') || '';
+                    const dataTooltip = btn.getAttribute('data-tooltip') || '';
+                    const label = ariaLabel || dataTooltip;
+                    
+                    // Match "Share [Name]'s review"
+                    if (/share/i.test(label) && label.toLowerCase().includes(reviewerName.toLowerCase())) {
                         btn.click();
                         return true;
                     }
@@ -466,10 +558,10 @@ async function extractShareLinksForReviews(page, reviews, log) {
             // Extract the share URL from the dialog
             const url = await page.evaluate(() => {
                 // Look for the textbox with the share URL
-                const textboxes = document.querySelectorAll('input[type="text"], [role="textbox"]');
-                for (const input of textboxes) {
-                    const value = input.value || input.getAttribute('aria-label') || '';
-                    if (value.includes('maps.app.goo.gl') || value.includes('goo.gl/maps')) {
+                const inputs = document.querySelectorAll('input[type="text"], input[readonly], [role="textbox"]');
+                for (const input of inputs) {
+                    const value = input.value || input.textContent || '';
+                    if (value.includes('maps.app.goo.gl') || value.includes('goo.gl/maps') || value.includes('google.com/maps')) {
                         return value;
                     }
                 }
