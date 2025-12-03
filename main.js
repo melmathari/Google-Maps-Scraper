@@ -26,7 +26,9 @@ await Actor.main(async () => {
         proxyConfiguration: proxyConfig = { useApifyProxy: true, apifyProxyGroups: ['RESIDENTIAL'] },
         minDelay = 1,
         maxDelay = 3,
-        debugScreenshots = false
+        debugScreenshots = false,
+        skipWithWebsite = false,
+        skipWithPhone = false
     } = input;
 
     // Handle maxResults: default 100, if 0 or blank = unlimited
@@ -45,6 +47,8 @@ await Actor.main(async () => {
     console.log(`📄 Scrape details: ${scrapeDetails ? 'Yes' : 'No'}`);
     console.log(`🔒 Use Apify proxy: ${proxyConfig?.useApifyProxy ? 'Yes' : 'No'}`);
     console.log(`📸 Debug screenshots: ${debugScreenshots ? 'Yes' : 'No'}`);
+    console.log(`🚫 Skip with website: ${skipWithWebsite ? 'Yes' : 'No'}`);
+    console.log(`🚫 Skip with phone: ${skipWithPhone ? 'Yes' : 'No'}`);
     if (proxyConfig?.useApifyProxy) {
         console.log(`   Proxy groups: ${proxyConfig.apifyProxyGroups?.join(', ') || 'AUTO'}`);
         if (proxyConfig.apifyProxyCountry) {
@@ -240,10 +244,24 @@ await Actor.main(async () => {
 
                     // Save or process businesses
                     const newBusinesses = [];
+                    let skippedCount = 0;
                     for (const business of businesses) {
                         if (scrapedCount >= maxResults) break;
 
                         if (!scrapedUrls.has(business.url)) {
+                            // Apply filtering - skip listings based on filter settings
+                            // These skipped listings do NOT count towards maxResults
+                            if (skipWithWebsite && business.website) {
+                                log.debug(`Skipping ${business.name} - has website: ${business.website}`);
+                                skippedCount++;
+                                continue;
+                            }
+                            if (skipWithPhone && business.phone) {
+                                log.debug(`Skipping ${business.name} - has phone: ${business.phone}`);
+                                skippedCount++;
+                                continue;
+                            }
+
                             scrapedUrls.add(business.url);
                             newBusinesses.push(business);
                             scrapedCount++;
@@ -274,7 +292,7 @@ await Actor.main(async () => {
                         }
                     }
 
-                    log.info(`✓ Found ${newBusinesses.length} new businesses (Total: ${scrapedCount}/${maxResults})`);
+                    log.info(`✓ Found ${newBusinesses.length} new businesses (Total: ${scrapedCount}/${isUnlimited ? '∞' : maxResults}${skippedCount > 0 ? `, Skipped: ${skippedCount}` : ''})`);
 
                 } catch (error) {
                     log.error(`Error processing search page: ${error.message}`);
