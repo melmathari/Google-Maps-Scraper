@@ -287,34 +287,113 @@ async function scrollReviewsPanel(page, maxReviews, log) {
 }
 
 /**
- * Extract reviews from the current page using data-review-id as the anchor
+ * Extract reviews from the current page using multiple robust selectors
  */
 async function extractReviewsFromPage(page, maxReviews, log) {
     const reviews = await page.evaluate((max) => {
         const results = [];
         
-        // Find all review containers by data-review-id attribute
-        const reviewContainers = document.querySelectorAll('div.jftiEf[data-review-id]');
+        // Multiple selectors for review containers (Google changes these frequently)
+        const containerSelectors = [
+            'div.jftiEf[data-review-id]',      // Primary: has data-review-id
+            'div[data-review-id]',              // Fallback: any div with data-review-id
+            'div.jftiEf',                       // Fallback: class-based
+        ];
+        
+        let reviewContainers = [];
+        for (const selector of containerSelectors) {
+            reviewContainers = document.querySelectorAll(selector);
+            if (reviewContainers.length > 0) break;
+        }
+        
+        // If still no containers, try finding by structure (button with "Photo of" in aria-label)
+        if (reviewContainers.length === 0) {
+            const photoButtons = document.querySelectorAll('button[aria-label^="Photo of"]');
+            const containerSet = new Set();
+            for (const btn of photoButtons) {
+                // Go up to find the review container (usually 3-5 levels up)
+                let parent = btn.parentElement;
+                for (let i = 0; i < 6 && parent; i++) {
+                    if (parent.getAttribute('data-review-id') || 
+                        parent.classList.contains('jftiEf') ||
+                        parent.querySelector('span[role="img"][aria-label*="star"]')) {
+                        containerSet.add(parent);
+                        break;
+                    }
+                    parent = parent.parentElement;
+                }
+            }
+            reviewContainers = Array.from(containerSet);
+        }
         
         for (const container of reviewContainers) {
             if (results.length >= max) break;
             
             try {
-                const reviewId = container.getAttribute('data-review-id');
+                // Get review ID from data attribute or generate from position
+                const reviewId = container.getAttribute('data-review-id') || 
+                                `review-${results.length}`;
                 
-                // Reviewer name from aria-label of container or d4r55 class
+                // === REVIEWER NAME ===
+                // Method 1: aria-label on container
                 let reviewerName = container.getAttribute('aria-label') || '';
+                
+                // Method 2: Button with "Photo of X" aria-label
                 if (!reviewerName) {
-                    const nameEl = container.querySelector('.d4r55');
-                    reviewerName = nameEl ? nameEl.textContent.trim() : 'Unknown';
+                    const photoBtn = container.querySelector('button[aria-label^="Photo of"]');
+                    if (photoBtn) {
+                        const label = photoBtn.getAttribute('aria-label');
+                        reviewerName = label.replace('Photo of ', '').trim();
+                    }
                 }
                 
-                // Reviewer subtitle (e.g., "Local Guide · 26 reviews · 3 photos")
-                const subtitleEl = container.querySelector('.RfnDt');
-                const reviewerSubtitle = subtitleEl ? subtitleEl.textContent.trim() : null;
+                // Method 3: Class-based selectors (d4r55 or similar)
+                if (!reviewerName) {
+                    const nameSelectors = ['.d4r55', '.WNxzHc', '[class*="fontTitleSmall"]'];
+                    for (const sel of nameSelectors) {
+                        const nameEl = container.querySelector(sel);
+                        if (nameEl && nameEl.textContent.trim()) {
+                            reviewerName = nameEl.textContent.trim();
+                            break;
+                        }
+                    }
+                }
                 
-                // Star rating from span with role="img" and aria-label containing "stars"
+                // Method 4: First link or span with substantial text
+                if (!reviewerName || reviewerName === 'Unknown') {
+                    const links = container.querySelectorAll('a, button');
+                    for (const link of links) {
+                        const text = link.textContent?.trim();
+                        if (text && text.length > 2 && text.length < 50 && 
+                            !text.includes('star') && !text.includes('Like') && 
+                            !text.includes('Share') && !text.includes('review')) {
+                            reviewerName = text;
+                            break;
+                        }
+                    }
+                }
+                
+                if (!reviewerName) reviewerName = 'Unknown';
+                
+                // === REVIEWER SUBTITLE ===
+                // (e.g., "Local Guide · 26 reviews · 3 photos")
+                let reviewerSubtitle = null;
+                const subtitleSelectors = ['.RfnDt', '.A503be', '[class*="fontBodySmall"]'];
+                for (const sel of subtitleSelectors) {
+                    const subtitleEl = container.querySelector(sel);
+                    if (subtitleEl) {
+                        const text = subtitleEl.textContent.trim();
+                        if (text.includes('review') || text.includes('Local Guide') || text.includes('photo')) {
+                            reviewerSubtitle = text;
+                            break;
+                        }
+                    }
+                }
+                
+                // === STAR RATING ===
                 let rating = null;
+                
+                // Method 1: span with role="img" and aria-label containing "star"
                 const ratingEl = container.querySelector('span[role="img"][aria-label*="star"]');
                 if (ratingEl) {
                     const ratingMatch = ratingEl.getAttribute('aria-label').match(/(\d+)\s*star/i);
@@ -323,22 +402,122 @@ async function extractReviewsFromPage(page, maxReviews, log) {
                     }
                 }
                 
-                // Review text from span.wiI7pd
-                const textEl = container.querySelector('span.wiI7pd');
-                const reviewText = textEl ? textEl.textContent.trim() : null;
+                // Method 2: kvMYJc class (stars container) - count filled stars
+                if (rating === null) {
+                    const starsContainer = container.querySelector('.kvMYJc');
+                    if (starsContainer) {
+                        // Count elements that represent filled stars
+                        const filledStars = starsContainer.querySelectorAll('img[src*="star"], span[aria-label*="star"]');
+                        if (filledStars.length > 0) {
+                            rating = filledStars.length;
+                        }
+                    }
+                }
                 
-                // Review date from span.rsqaWe
-                const dateEl = container.querySelector('span.rsqaWe');
-                const reviewDate = dateEl ? dateEl.textContent.trim() : null;
+                // Method 3: Find any element with "X stars" in aria-label
+                if (rating === null) {
+                    const allElements = container.querySelectorAll('[aria-label*="star"]');
+                    for (const el of allElements) {
+                        const label = el.getAttribute('aria-label');
+                        const match = label.match(/(\d+)\s*star/i);
+                        if (match) {
+                            rating = parseInt(match[1]);
+                            break;
+                        }
+                    }
+                }
                 
-                // Like count from the Like button's aria-label
+                // === REVIEW TEXT ===
+                let reviewText = null;
+                const textSelectors = [
+                    'span.wiI7pd',
+                    '.MyEned span',
+                    '[class*="review-full-text"]',
+                    '[data-expandable-section] span'
+                ];
+                
+                for (const sel of textSelectors) {
+                    const textEl = container.querySelector(sel);
+                    if (textEl) {
+                        const text = textEl.textContent.trim();
+                        if (text && text.length > 5) {
+                            reviewText = text;
+                            break;
+                        }
+                    }
+                }
+                
+                // Fallback: Find the longest text span that's not name/date/subtitle
+                if (!reviewText) {
+                    const spans = container.querySelectorAll('span');
+                    let longestText = '';
+                    for (const span of spans) {
+                        const text = span.textContent?.trim() || '';
+                        if (text.length > longestText.length && 
+                            text.length > 20 &&
+                            !text.includes('star') &&
+                            !text.includes('Local Guide') &&
+                            !text.includes('review') &&
+                            text !== reviewerName) {
+                            longestText = text;
+                        }
+                    }
+                    if (longestText) reviewText = longestText;
+                }
+                
+                // === REVIEW DATE ===
+                let reviewDate = null;
+                const dateSelectors = ['span.rsqaWe', '.DU9Pgb', '[class*="dehysf"]'];
+                
+                for (const sel of dateSelectors) {
+                    const dateEl = container.querySelector(sel);
+                    if (dateEl) {
+                        const text = dateEl.textContent.trim();
+                        // Check if it looks like a date (contains ago, year, month, week, day)
+                        if (text.match(/ago|year|month|week|day|hour|minute|edited/i)) {
+                            reviewDate = text;
+                            break;
+                        }
+                    }
+                }
+                
+                // Fallback: Search all spans for date-like text
+                if (!reviewDate) {
+                    const spans = container.querySelectorAll('span');
+                    for (const span of spans) {
+                        const text = span.textContent?.trim() || '';
+                        if (text.match(/^\d+\s*(year|month|week|day|hour|minute)s?\s*ago$/i) ||
+                            text.match(/^(a|an)\s+(year|month|week|day|hour|minute)\s*ago$/i) ||
+                            text.match(/edited/i)) {
+                            reviewDate = text;
+                            break;
+                        }
+                    }
+                }
+                
+                // === LIKES COUNT ===
                 let likesCount = null;
-                const likeBtn = container.querySelector('button[aria-label*="like"]');
+                
+                // Method 1: Button with "X likes" or "Like" aria-label
+                const likeBtn = container.querySelector('button[aria-label*="like" i]');
                 if (likeBtn) {
                     const likeLabel = likeBtn.getAttribute('aria-label') || '';
                     const likesMatch = likeLabel.match(/(\d+)\s*like/i);
                     if (likesMatch) {
                         likesCount = parseInt(likesMatch[1]);
+                    }
+                }
+                
+                // Method 2: Check button text content
+                if (likesCount === null) {
+                    const buttons = container.querySelectorAll('button');
+                    for (const btn of buttons) {
+                        const text = btn.textContent?.trim() || '';
+                        const match = text.match(/^(\d+)$/);
+                        if (match && btn.getAttribute('aria-label')?.toLowerCase().includes('like')) {
+                            likesCount = parseInt(match[1]);
+                            break;
+                        }
                     }
                 }
                 
