@@ -315,7 +315,39 @@ async function clickReviewsTab(page, log) {
                 }
             }
             
-            await randomDelay(2000, 3000);
+            // Wait for all initial reviews to render (Google loads ~10 by default)
+            // On slower connections/proxies, reviews render progressively
+            log.info('⏳ Waiting for initial reviews to fully render...');
+            let lastReviewCount = 0;
+            let stableCount = 0;
+            
+            for (let i = 0; i < 10; i++) {
+                await randomDelay(800, 1200);
+                
+                const currentReviewCount = await page.evaluate(() => {
+                    const elements = document.querySelectorAll('[data-review-id]');
+                    const uniqueIds = new Set();
+                    for (const el of elements) {
+                        uniqueIds.add(el.getAttribute('data-review-id'));
+                    }
+                    return uniqueIds.size;
+                });
+                
+                if (currentReviewCount === lastReviewCount) {
+                    stableCount++;
+                    // If count is stable for 3 checks, reviews have finished loading
+                    if (stableCount >= 3) {
+                        log.info(`✓ Initial reviews stabilized at ${currentReviewCount}`);
+                        break;
+                    }
+                } else {
+                    log.debug?.(`Reviews rendering: ${currentReviewCount} (was ${lastReviewCount})`);
+                    stableCount = 0;
+                    lastReviewCount = currentReviewCount;
+                }
+            }
+            
+            await randomDelay(1000, 1500);
             return true;
         }
         
