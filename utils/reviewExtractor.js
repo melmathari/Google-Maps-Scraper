@@ -71,33 +71,91 @@ export async function extractReviewsFromListing(page, business, maxReviews, extr
  */
 async function clickOnListing(page, business, log) {
     try {
+        // First, ensure we're back on the listings view
+        const onListingsPage = await page.evaluate(() => {
+            const feed = document.querySelector('[role="feed"]');
+            const articles = document.querySelectorAll('div[role="article"]');
+            return feed || articles.length > 0;
+        });
+        
+        if (!onListingsPage) {
+            log.warning('Not on listings page, trying to navigate back...');
+            await page.keyboard.press('Escape');
+            await randomDelay(1000, 1500);
+        }
+        
         const clicked = await page.evaluate((businessUrl, businessName) => {
-            // Try to find the listing link by URL
+            // Helper to normalize strings for comparison
+            const normalize = (str) => str.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const normalizedName = normalize(businessName);
+            
+            // Method 1: Try to find the listing link by URL match
             const links = document.querySelectorAll('a[href*="/maps/place/"]');
             for (const link of links) {
-                if (link.href === businessUrl || link.href.includes(encodeURIComponent(businessName))) {
+                if (link.href === businessUrl) {
                     link.click();
-                    return true;
+                    return 'url-exact';
                 }
             }
             
-            // Try to find by aria-label containing business name
+            // Method 2: Try to find by partial URL match
+            for (const link of links) {
+                // Extract place name from URL
+                const urlMatch = link.href.match(/\/maps\/place\/([^/]+)/);
+                if (urlMatch) {
+                    const urlPlaceName = normalize(decodeURIComponent(urlMatch[1]).replace(/\+/g, ' '));
+                    if (urlPlaceName.includes(normalizedName) || normalizedName.includes(urlPlaceName)) {
+                        link.click();
+                        return 'url-partial';
+                    }
+                }
+            }
+            
+            // Method 3: Try to find by aria-label containing business name
             const articles = document.querySelectorAll('div[role="article"]');
             for (const article of articles) {
                 const ariaLabel = article.getAttribute('aria-label') || '';
-                if (ariaLabel.includes(businessName)) {
+                if (normalize(ariaLabel).includes(normalizedName) || normalizedName.includes(normalize(ariaLabel))) {
                     const link = article.querySelector('a[href*="/maps/place/"]');
                     if (link) {
                         link.click();
-                        return true;
+                        return 'article-aria';
                     }
+                    // Try clicking the article itself
+                    article.click();
+                    return 'article-click';
+                }
+            }
+            
+            // Method 4: Try to find by text content
+            for (const article of articles) {
+                const textContent = article.textContent || '';
+                if (normalize(textContent).includes(normalizedName)) {
+                    const link = article.querySelector('a[href*="/maps/place/"]');
+                    if (link) {
+                        link.click();
+                        return 'text-content';
+                    }
+                }
+            }
+            
+            // Method 5: Find by link text
+            for (const link of links) {
+                const linkText = link.textContent || link.getAttribute('aria-label') || '';
+                if (normalize(linkText).includes(normalizedName) || normalizedName.includes(normalize(linkText))) {
+                    link.click();
+                    return 'link-text';
                 }
             }
             
             return false;
         }, business.url, business.name);
         
-        return clicked;
+        if (clicked) {
+            log.debug(`Clicked on listing using method: ${clicked}`);
+        }
+        
+        return !!clicked;
     } catch (error) {
         log.warning(`Error clicking on listing: ${error.message}`);
         return false;
