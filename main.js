@@ -807,21 +807,86 @@ await Actor.main(async () => {
                 log.info(`📄 Processing search results: ${url}`);
 
                 try {
-                    // Wait for page to load
-                    await page.waitForSelector('[role="feed"], [aria-label*="Results"]', { timeout: 30000 });
-                    await randomDelay(3000, 5000);
-
-                    // Handle cookie consent if present
+                    // Handle EU cookie consent FIRST (appears before results load in EU)
+                    // Google's GDPR consent dialog blocks the page until accepted
+                    await randomDelay(2000, 3000);
+                    
                     try {
-                        const cookieButton = await page.$('button:has-text("Accept all"), button:has-text("I agree")');
-                        if (cookieButton) {
-                            await cookieButton.click();
-                            await randomDelay(1000, 2000);
-                            log.info('✓ Accepted cookies');
+                        // Try multiple selectors for Google's consent dialog
+                        // The consent form typically appears in an iframe or directly on page
+                        const consentSelectors = [
+                            'button[aria-label="Accept all"]',
+                            'button[aria-label="Reject all"]', // Fallback - either works to dismiss
+                            '[aria-label="Accept all"]',
+                            'form[action*="consent"] button',
+                            'button:first-of-type', // In consent dialogs, first button is usually "Reject"
+                        ];
+                        
+                        // Check for consent dialog
+                        const consentForm = await page.$('form[action*="consent"]');
+                        if (consentForm) {
+                            log.info('🍪 Cookie consent dialog detected, attempting to dismiss...');
+                            
+                            // Look for "Accept all" or "Reject all" button
+                            for (const selector of consentSelectors) {
+                                try {
+                                    const button = await page.$(selector);
+                                    if (button) {
+                                        const buttonText = await page.evaluate(el => el.textContent, button);
+                                        if (buttonText && (buttonText.includes('Accept') || buttonText.includes('Reject') || buttonText.includes('agree'))) {
+                                            await button.click();
+                                            log.info(`✓ Clicked consent button: "${buttonText.trim()}"`);
+                                            await randomDelay(2000, 3000);
+                                            break;
+                                        }
+                                    }
+                                } catch (e) {
+                                    // Continue to next selector
+                                }
+                            }
                         }
+                        
+                        // Also try clicking by evaluating buttons with specific text
+                        await page.evaluate(() => {
+                            const buttons = Array.from(document.querySelectorAll('button'));
+                            for (const btn of buttons) {
+                                const text = btn.textContent?.toLowerCase() || '';
+                                if (text.includes('accept all') || text.includes('reject all') || text.includes('i agree')) {
+                                    btn.click();
+                                    return true;
+                                }
+                            }
+                            return false;
+                        });
+                        
+                        await randomDelay(1000, 2000);
                     } catch (e) {
-                        // No cookie banner
+                        log.debug(`Cookie consent handling: ${e.message}`);
                     }
+                    
+                    // Wait for page to load - try multiple selectors
+                    log.info('⏳ Waiting for search results to load...');
+                    try {
+                        await page.waitForSelector('[role="feed"], [aria-label*="Results"], div[role="article"]', { timeout: 30000 });
+                    } catch (e) {
+                        // If standard selectors fail, check what's actually on the page
+                        const pageContent = await page.evaluate(() => {
+                            return {
+                                hasArticles: document.querySelectorAll('div[role="article"]').length,
+                                hasLinks: document.querySelectorAll('a[href*="/maps/place/"]').length,
+                                bodyText: document.body?.innerText?.substring(0, 500) || ''
+                            };
+                        });
+                        log.info(`Page state: ${JSON.stringify(pageContent)}`);
+                        
+                        // If we have articles or place links, continue anyway
+                        if (pageContent.hasArticles > 0 || pageContent.hasLinks > 0) {
+                            log.info(`✓ Found ${pageContent.hasArticles} articles and ${pageContent.hasLinks} place links`);
+                        } else {
+                            throw new Error(`No results found. Page content: ${pageContent.bodyText}`);
+                        }
+                    }
+                    await randomDelay(2000, 3000);
 
                     // Scroll sidebar to load results (smart scrolling based on maxResults)
                     const scrollResult = await scrollSidebar(page, maxResults);
@@ -864,13 +929,34 @@ await Actor.main(async () => {
 
                 } catch (error) {
                     log.error(`Error processing search page: ${error.message}`);
+                    
+                    // Capture screenshot for debugging
+                    try {
+                        const screenshotKey = `ERROR-screenshot-${Date.now()}`;
+                        const screenshot = await page.screenshot({ fullPage: false });
+                        await Actor.setValue(screenshotKey, screenshot, { contentType: 'image/png' });
+                        log.info(`📸 Debug screenshot saved as ${screenshotKey}`);
+                        
+                        // Also log the page URL and any visible text
+                        const debugInfo = await page.evaluate(() => ({
+                            url: window.location.href,
+                            title: document.title,
+                            bodyText: document.body?.innerText?.substring(0, 1000) || '',
+                            hasConsent: !!document.querySelector('form[action*="consent"]'),
+                            hasCaptcha: document.body?.innerText?.includes('captcha') || document.body?.innerText?.includes('unusual traffic')
+                        }));
+                        log.info(`Debug info: ${JSON.stringify(debugInfo, null, 2)}`);
+                    } catch (screenshotError) {
+                        log.warning(`Could not capture debug screenshot: ${screenshotError.message}`);
+                    }
+                    
                     throw error;
                 }
             }
         },
 
         async failedRequestHandler({ request, log }, error) {
-            log.error(`Request ${request.url} failed: ${error.message}`);
+            log.error(`Request ${request.url} failed after retries: ${error.message}`);
         }
     });
 
