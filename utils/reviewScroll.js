@@ -45,39 +45,40 @@ export async function scrollReviewsPanel(page, maxReviews, log = console) {
             return { scrollCount, reachedEnd: false, reviewsLoaded: currentReviewCount };
         }
 
-        // NEW APPROACH: Use scrollIntoView on the last review element
-        // This triggers lazy loading better than scrollTop
-        const scrollResult = await page.evaluate(() => {
-            // Find all review elements
-            const reviews = document.querySelectorAll('div[data-review-id]');
-            
-            if (reviews.length === 0) {
-                // Fallback: try other selectors
-                const altReviews = document.querySelectorAll('div.jftiEf');
-                if (altReviews.length > 0) {
-                    const lastReview = altReviews[altReviews.length - 1];
-                    lastReview.scrollIntoView({ behavior: 'smooth', block: 'end' });
-                    return { found: true, method: 'scrollIntoView-jftiEf', count: altReviews.length };
+        // Use mouse wheel to scroll - this triggers lazy loading properly
+        // First, find a review element to hover over
+        const reviewElement = await page.$('div[data-review-id]') || 
+                             await page.$('div.jftiEf') ||
+                             await page.$('button[aria-label^="Photo of"]');
+        
+        if (reviewElement) {
+            // Get the bounding box of the review element
+            const box = await reviewElement.boundingBox();
+            if (box) {
+                // Move mouse to the reviews area
+                await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+                
+                // Scroll down using mouse wheel (multiple times for better effect)
+                for (let i = 0; i < 3; i++) {
+                    await page.mouse.wheel({ deltaY: 500 });
+                    await randomDelay(300, 500);
                 }
-                return { found: false, method: 'none', count: 0 };
+                
+                log.debug?.(`📜 Scrolled using mouse wheel at position (${box.x}, ${box.y})`);
             }
-            
-            // Scroll the last review into view - this triggers lazy loading
-            const lastReview = reviews[reviews.length - 1];
-            lastReview.scrollIntoView({ behavior: 'smooth', block: 'end' });
-            
-            return { found: true, method: 'scrollIntoView-dataReviewId', count: reviews.length };
-        });
-
-        // Log scroll result for debugging
-        if (scrollResult.found) {
-            log.debug?.(`📜 Scrolled using method: ${scrollResult.method}, reviews visible: ${scrollResult.count}`);
         } else {
-            log.warning?.(`📜 Could not find review elements to scroll`);
+            // Fallback: try to scroll using keyboard after focusing the panel
+            const mainPanel = await page.$('[role="main"]');
+            if (mainPanel) {
+                await mainPanel.click();
+                await page.keyboard.press('PageDown');
+                await page.keyboard.press('PageDown');
+                log.debug?.(`📜 Scrolled using keyboard PageDown`);
+            }
         }
 
         // Wait for Google Maps to load more reviews (lazy loading needs time)
-        await randomDelay(2500, 4000);
+        await randomDelay(2000, 3500);
 
         // Check for "end of reviews" indicators
         const reachedEnd = await page.evaluate(() => {
