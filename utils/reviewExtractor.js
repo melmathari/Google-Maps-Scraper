@@ -167,37 +167,34 @@ async function clickOnListing(page, business, log) {
  */
 async function waitForSidebar(page, log) {
     try {
-        // Wait for the business name h1 to appear (NOT "Results")
+        // Wait for the tab bar (Overview, Reviews, About) to appear
+        // This is the most reliable indicator the business panel is loaded
+        // The h1 might stay as "Results" in some cases
         await page.waitForFunction(() => {
-            const h1 = document.querySelector('h1');
-            if (h1) {
-                const text = h1.textContent?.trim() || '';
-                // Make sure it's not the search results h1
-                if (text && text !== 'Results' && text.length > 0) {
-                    return true;
+            // Method 1: Check for role="tab" elements
+            const tabs = document.querySelectorAll('[role="tab"]');
+            if (tabs.length >= 2) {
+                // Check if one of them is Reviews
+                for (const tab of tabs) {
+                    const text = (tab.textContent || '').toLowerCase().trim();
+                    if (text === 'reviews') return true;
                 }
             }
-            return false;
-        }, { timeout: 15000 });
-        log.info('✓ Business panel h1 loaded');
-        
-        // Now wait for the tab bar (Overview, Reviews, About) to appear
-        // These tabs might not have role="tab", so look for buttons in the tab area
-        await page.waitForFunction(() => {
-            // Look for the tab bar - buttons containing Overview, Reviews, About
+            
+            // Method 2: Look for buttons with exact text Overview and Reviews
             const buttons = document.querySelectorAll('button');
             let hasOverview = false;
             let hasReviews = false;
             
             for (const btn of buttons) {
-                const text = (btn.textContent || '').toLowerCase();
+                const text = (btn.textContent || '').toLowerCase().trim();
                 if (text === 'overview') hasOverview = true;
                 if (text === 'reviews') hasReviews = true;
             }
             
             return hasOverview && hasReviews;
-        }, { timeout: 10000 });
-        log.info('✓ Tab bar loaded (Overview, Reviews tabs found)');
+        }, { timeout: 20000 });
+        log.info('✓ Business panel loaded (tab bar found)');
         
     } catch (error) {
         log.warning(`Sidebar may not have loaded fully: ${error.message}`);
@@ -424,12 +421,15 @@ async function clickReviewsTab(page, log) {
             
             // Wait for all initial reviews to render (Google loads ~10 by default)
             // On slower connections/proxies, reviews render progressively
+            // Add extra initial delay for cloud environments where lazy loading is slower
             log.info('⏳ Waiting for initial reviews to fully render...');
+            await randomDelay(2000, 3000); // Extra initial wait for lazy loading
+            
             let lastReviewCount = 0;
             let stableCount = 0;
             
             for (let i = 0; i < 10; i++) {
-                await randomDelay(800, 1200);
+                await randomDelay(1000, 1500); // Slightly longer waits between checks
                 
                 const currentReviewCount = await page.evaluate(() => {
                     const elements = document.querySelectorAll('[data-review-id]');
@@ -444,6 +444,25 @@ async function clickReviewsTab(page, log) {
                     stableCount++;
                     // If count is stable for 3 checks, reviews have finished loading
                     if (stableCount >= 3) {
+                        // If we stabilized at 0, wait a bit more - reviews might still be loading
+                        if (currentReviewCount === 0) {
+                            log.info('⏳ No reviews detected yet, waiting for lazy load...');
+                            await randomDelay(3000, 4000);
+                            
+                            // Check one more time
+                            const finalCheck = await page.evaluate(() => {
+                                const elements = document.querySelectorAll('[data-review-id]');
+                                return elements.length;
+                            });
+                            
+                            if (finalCheck > 0) {
+                                log.info(`✓ Reviews appeared after extra wait: ${finalCheck}`);
+                                lastReviewCount = finalCheck;
+                                stableCount = 0;
+                                continue;
+                            }
+                        }
+                        
                         log.info(`✓ Initial reviews stabilized at ${currentReviewCount}`);
                         
                         // DEBUG: Take screenshot when initial reviews have stabilized
