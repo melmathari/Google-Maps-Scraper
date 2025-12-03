@@ -1,5 +1,6 @@
 import { randomDelay } from './utils.js';
 import { scrollReviewsPanel } from './reviewScroll.js';
+import { Actor } from 'apify';
 
 /**
  * Extract reviews for a business by clicking on its listing to open the sidebar
@@ -315,6 +316,17 @@ async function clickReviewsTab(page, log) {
                     await page.waitForSelector(selector, { timeout: 20000 });
                     reviewsLoaded = true;
                     log.info(`✓ Reviews panel loaded (selector: ${selector.substring(0, 30)}...)`);
+                    
+                    // DEBUG: Take screenshot when reviews panel loads
+                    try {
+                        const screenshot1 = await page.screenshot({ fullPage: false });
+                        const kvStore = await Actor.openKeyValueStore();
+                        await kvStore.setValue(`debug-reviews-panel-loaded-${Date.now()}`, screenshot1, { contentType: 'image/png' });
+                        log.info('📸 Screenshot saved: reviews-panel-loaded');
+                    } catch (ssError) {
+                        log.warning(`Could not save screenshot: ${ssError.message}`);
+                    }
+                    
                     break;
                 } catch (e) {
                     // Continue to next selector
@@ -391,6 +403,17 @@ async function clickReviewsTab(page, log) {
                     // If count is stable for 3 checks, reviews have finished loading
                     if (stableCount >= 3) {
                         log.info(`✓ Initial reviews stabilized at ${currentReviewCount}`);
+                        
+                        // DEBUG: Take screenshot when initial reviews have stabilized
+                        try {
+                            const screenshot2 = await page.screenshot({ fullPage: false });
+                            const kvStore = await Actor.openKeyValueStore();
+                            await kvStore.setValue(`debug-reviews-stabilized-${currentReviewCount}-${Date.now()}`, screenshot2, { contentType: 'image/png' });
+                            log.info(`📸 Screenshot saved: reviews-stabilized-${currentReviewCount}`);
+                        } catch (ssError) {
+                            log.warning(`Could not save screenshot: ${ssError.message}`);
+                        }
+                        
                         break;
                     }
                 } else {
