@@ -798,8 +798,25 @@ await Actor.main(async () => {
                 }
 
                 await extractBusinessDetails(page, business);
-                await Dataset.pushData(business);
-                log.info(`✓ Saved details for: ${business.name}`);
+                
+                // Clean data types before saving
+                const cleanBusiness = {
+                    name: String(business.name || 'Unknown'),
+                    url: String(business.url || ''),
+                    rating: business.rating !== null ? Number(business.rating) : null,
+                    reviewCount: business.reviewCount !== null ? parseInt(business.reviewCount) : null,
+                    category: business.category || null,
+                    address: business.address || null,
+                    phone: business.phone || null,
+                    website: business.website || null,
+                    hoursStatus: business.hoursStatus || null,
+                    priceLevel: business.priceLevel || null,
+                    plusCode: business.plusCode || null,
+                    isSponsored: Boolean(business.isSponsored),
+                    scrapedAt: business.scrapedAt || new Date().toISOString()
+                };
+                await Dataset.pushData(cleanBusiness);
+                log.info(`✓ Saved details for: ${cleanBusiness.name}`);
 
                 await randomDelay(minDelay * 1000, maxDelay * 1000);
 
@@ -919,8 +936,21 @@ await Actor.main(async () => {
                                     userData: { business }
                                 }]);
                             } else {
-                                // Save immediately if not scraping details
-                                await Dataset.pushData(business);
+                                // Clean data types before saving
+                                const cleanBusiness = {
+                                    name: String(business.name || 'Unknown'),
+                                    url: String(business.url || ''),
+                                    rating: business.rating !== null ? Number(business.rating) : null,
+                                    reviewCount: business.reviewCount !== null ? parseInt(business.reviewCount) : null,
+                                    category: business.category || null,
+                                    address: business.address || null,
+                                    phone: business.phone || null,
+                                    website: business.website || null,
+                                    hoursStatus: business.hoursStatus || null,
+                                    isSponsored: Boolean(business.isSponsored),
+                                    scrapedAt: business.scrapedAt || new Date().toISOString()
+                                };
+                                await Dataset.pushData(cleanBusiness);
                             }
                         }
                     }
@@ -932,9 +962,9 @@ await Actor.main(async () => {
                     
                     // Capture screenshot for debugging
                     try {
-                        const screenshotKey = `ERROR-screenshot-${Date.now()}`;
-                        const screenshot = await page.screenshot({ fullPage: false });
-                        await Actor.setValue(screenshotKey, screenshot, { contentType: 'image/png' });
+                        const screenshotKey = `SCREENSHOT-error-${Date.now()}`;
+                        const screenshot = await page.screenshot({ fullPage: false, type: 'png' });
+                        await Actor.setValue(screenshotKey, Buffer.from(screenshot), { contentType: 'image/png' });
                         log.info(`📸 Debug screenshot saved as ${screenshotKey}`);
                         
                         // Also log the page URL and any visible text
