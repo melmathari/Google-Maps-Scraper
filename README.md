@@ -232,11 +232,19 @@ npm start
 - `scrapeDetails: true` — Slower but gets phone, website, full address
 
 **Proxy Options**
-- **Datacenter proxies** — Cheapest option, works well for basic Google Maps searches
-- **Residential proxies** — More reliable for large-scale extraction, recommended if you experience blocks
+- **Datacenter proxies** — Cheapest option, works for basic Google Maps searches but may trigger bot detection
+- **Residential proxies** — More reliable for large-scale extraction, strongly recommended
 - **Residential proxies required** — When using `enrichWebsiteData` (business websites often block datacenter IPs)
 - Keep delays at 1-3 seconds (default)
 - Start with smaller batches to test
+
+⚠️ **Important:** Without residential proxies, Google Maps may detect unusual activity and block requests. This commonly causes:
+- Reviews failing to load or being empty
+- CAPTCHA challenges appearing
+- Incomplete or missing business data
+- Requests timing out
+
+For reliable review extraction, always use residential proxies.
 
 **Best Results**
 - Be specific with search queries ("italian restaurants" vs "food")
@@ -265,10 +273,11 @@ npm start
 - Try broader search terms
 - Check that businesses exist for your query in that area
 
-**Getting blocked?**
-- Ensure residential proxy is enabled
-- Increase delay settings
+**Getting blocked or reviews not loading?**
+- Enable residential proxies (datacenter proxies are easily detected by Google)
+- Increase delay settings (`minDelay: 2`, `maxDelay: 5`)
 - Reduce batch size
+- Google may show "unusual activity" warnings — residential proxies solve this
 
 **Missing contact details?**
 - Enable `scrapeDetails: true`
