@@ -29,6 +29,8 @@ This tool searches Google Maps for businesses matching your criteria and extract
 | `hoursStatus` | Open/closed status | With details |
 | `priceLevel` | Price indicator | When available |
 | `scrapedAt` | Extraction timestamp | Always |
+| `enrichment` | Emails, social links, contact page | With enrichment |
+| `quality_score` | Data completeness score (0-1) | With enrichment |
 
 ### Sample Output
 
@@ -44,6 +46,33 @@ This tool searches Google Maps for businesses matching your criteria and extract
   "website": "https://thecoffeehouse.com",
   "hoursStatus": "Open · Closes 9 PM",
   "scrapedAt": "2025-12-02T10:30:00.000Z"
+}
+```
+
+### Sample Output with Enrichment
+
+```json
+{
+  "name": "The Coffee House",
+  "url": "https://www.google.com/maps/place/...",
+  "rating": 4.7,
+  "reviewCount": 892,
+  "category": "Coffee shop",
+  "address": "123 Main Street, New York, NY 10001",
+  "phone": "+1 212-555-0123",
+  "website": "https://thecoffeehouse.com",
+  "hoursStatus": "Open · Closes 9 PM",
+  "scrapedAt": "2025-12-02T10:30:00.000Z",
+  "enrichment": {
+    "contact_page_url": "https://thecoffeehouse.com/contact",
+    "emails_found": ["info@thecoffeehouse.com", "orders@thecoffeehouse.com"],
+    "social": {
+      "facebook": "https://facebook.com/thecoffeehouse",
+      "instagram": "https://instagram.com/thecoffeehouse",
+      "twitter": "https://twitter.com/thecoffeehouse"
+    }
+  },
+  "quality_score": 0.9
 }
 ```
 
@@ -68,6 +97,15 @@ This tool searches Google Maps for businesses matching your criteria and extract
 | `skipWithWebsite` | boolean | false | Only return listings WITHOUT a website (for lead generation) |
 | `skipWithPhone` | boolean | false | Only return listings WITHOUT a phone number |
 | `skipWithoutContact` | boolean | false | Skip listings that have neither phone nor email |
+
+### Website Enrichment (B2B Lead Generation)
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `enrichWebsiteData` | boolean | false | Visit business websites to extract emails, social links, and contact pages |
+| `followContactPage` | boolean | true | Also scrape contact pages for additional email addresses |
+
+**Note:** Website enrichment requires **residential proxies** for reliable results. Business websites often block datacenter IPs.
 
 ## Usage Examples
 
@@ -130,6 +168,24 @@ This tool searches Google Maps for businesses matching your criteria and extract
 }
 ```
 
+### B2B Lead Generation with Enrichment (Emails & Social Links)
+
+```json
+{
+  "searchQuery": "plumber",
+  "location": "Paris, France",
+  "maxResults": 50,
+  "enrichWebsiteData": true,
+  "followContactPage": true,
+  "proxyConfiguration": {
+    "useApifyProxy": true,
+    "apifyProxyGroups": ["RESIDENTIAL"]
+  }
+}
+```
+
+This extracts emails, social media links (Facebook, Instagram, LinkedIn, Twitter/X), and contact page URLs from each business website.
+
 ## Practical Applications
 
 **Lead Generation**
@@ -176,8 +232,9 @@ npm start
 - `scrapeDetails: true` — Slower but gets phone, website, full address
 
 **Proxy Options**
-- **Datacenter proxies** — Cheapest option, works well for most searches
+- **Datacenter proxies** — Cheapest option, works well for basic Google Maps searches
 - **Residential proxies** — More reliable for large-scale extraction, recommended if you experience blocks
+- **Residential proxies required** — When using `enrichWebsiteData` (business websites often block datacenter IPs)
 - Keep delays at 1-3 seconds (default)
 - Start with smaller batches to test
 
