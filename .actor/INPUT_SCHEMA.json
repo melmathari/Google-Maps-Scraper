@@ -75,6 +75,19 @@
       "description": "Capture screenshots when errors occur for debugging purposes. Useful for troubleshooting but increases storage usage.",
       "editor": "checkbox",
       "default": false
+    },
+    "skipWithWebsite": {
+      "sectionCaption": "Filtering Options",
+      "title": "Skip Listings With Website",
+      "type": "boolean",
+      "description": "When enabled, only return listings that do NOT have a website. Useful for finding businesses without web presence for lead generation.",
+      "default": false
+    },
+    "skipWithPhone": {
+      "title": "Skip Listings With Phone",
+      "type": "boolean",
+      "description": "When enabled, only return listings that do NOT have a phone number. Useful for finding businesses with incomplete contact info.",
+      "default": false
     }
   },
   "required": ["searchQuery"]
