@@ -245,16 +245,22 @@ async function extractReviewsFromPage(page, maxReviews, log) {
         const results = [];
         
         // Multiple selectors for review containers (Google changes these frequently)
+        // IMPORTANT: Match the same selectors used in countReviews() for consistency
         const containerSelectors = [
-            'div.jftiEf[data-review-id]',      // Primary: has data-review-id
-            'div[data-review-id]',              // Fallback: any div with data-review-id
-            'div.jftiEf',                       // Fallback: class-based
+            'div.jftiEf.fontBodyMedium',        // Primary: from tutorial (most reliable)
+            'div.jftiEf[data-review-id]',       // With data-review-id
+            'div[data-review-id]',              // Any div with data-review-id
+            'div.jftiEf',                       // Fallback: class-based only
         ];
         
         let reviewContainers = [];
         for (const selector of containerSelectors) {
-            reviewContainers = document.querySelectorAll(selector);
-            if (reviewContainers.length > 0) break;
+            const found = document.querySelectorAll(selector);
+            if (found.length > 0) {
+                reviewContainers = found;
+                console.log(`Found ${found.length} reviews using selector: ${selector}`);
+                break;
+            }
         }
         
         // If still no containers, try finding by structure (button with "Photo of" in aria-label)
@@ -275,6 +281,7 @@ async function extractReviewsFromPage(page, maxReviews, log) {
                 }
             }
             reviewContainers = Array.from(containerSet);
+            console.log(`Found ${reviewContainers.length} reviews using photo button fallback`);
         }
         
         for (const container of reviewContainers) {

@@ -1,0 +1,19 @@
+# Project Rules for Google Maps Scraper
+
+## Testing & Running
+- Do NOT automatically run `npx apify-cli run` or any test commands after making code changes
+- Only run the scraper when the user explicitly asks to test or run it
+- Let the user decide when to test the changes themselves
+
+## Code Style
+- This is an Apify Actor project using Crawlee and Puppeteer
+- Use ES modules (import/export syntax)
+- Do not export modules from utility files unless they need to be imported elsewhere
+- Follow existing code patterns and conventions in the project
+
+## Apify-Specific
+- Input is read via `Actor.getInput()`
+- Output is saved via `Dataset.pushData()`
+- Use `Actor.createProxyConfiguration()` for proxies
+- The actor runs headless by default
+

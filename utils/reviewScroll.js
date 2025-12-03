@@ -1,43 +1,44 @@
 import { randomDelay } from './utils.js';
 
 /**
- * Find the scrollable container for reviews in Google Maps
- * Uses multiple selectors as Google changes the DOM structure frequently
+ * Auto-scroll function that runs entirely inside the browser context
+ * This is the exact approach from the tutorial - everything runs inside page.evaluate
  * @param {Object} page - Puppeteer page
- * @returns {Promise<boolean>} - Whether a scrollable element was found
+ * @param {number} maxReviews - Maximum reviews to load
+ * @returns {Promise<number>} - Number of reviews loaded
  */
-async function findAndScrollReviewsContainer(page) {
-    return page.evaluate(async () => {
+async function autoScrollInBrowser(page, maxReviews) {
+    return page.evaluate(async (targetReviews) => {
         // Helper function to find the scrollable element
         async function getScrollableElement() {
-            // Primary selectors used by Google Maps for the reviews panel
             const selectors = [
-                '.DxyBCb [role="main"]',           // Reviews panel in main view
-                '.WNBkOb [role="main"]',           // Alternative main container
-                '.review-dialog-list',             // Review dialog list
-                '.section-layout-root',            // Section layout
-                '[role="main"]',                   // Generic main role
-                '.m6QErb[aria-label]',             // Scrollable list with aria-label
-                '.m6QErb.DxyBCb',                  // Another common container
-                'div[tabindex="-1"][class*="m6QErb"]', // Focusable scrollable div
+                '.DxyBCb [role="main"]',
+                '.WNBkOb [role="main"]',
+                '.review-dialog-list',
+                '.section-layout-root',
+                '.m6QErb.DxyBCb.kA9KIf.dS8AEf',  // Common reviews container
+                '.m6QErb[aria-label]',
+                '.m6QErb.DxyBCb',
+                '[role="main"]',
             ];
 
-            // Try each selector
             for (const selector of selectors) {
                 const element = document.querySelector(selector);
-                if (element && element.scrollHeight > element.clientHeight) {
-                    return element;
+                if (element) {
+                    // Check if this element is scrollable
+                    if (element.scrollHeight > element.clientHeight) {
+                        return element;
+                    }
                 }
             }
 
-            // Fallback: Find any scrollable container that contains reviews
+            // Fallback: find any scrollable container with reviews
             const possibleContainers = document.querySelectorAll('div');
             for (const container of possibleContainers) {
-                // Check if container is scrollable and contains review elements
-                if (container.scrollHeight > container.clientHeight &&
-                    (container.querySelector('.jftiEf') || 
-                     container.querySelector('div[data-review-id]') ||
-                     container.querySelector('button[aria-label^="Photo of"]'))) {
+                if (
+                    container.scrollHeight > container.clientHeight &&
+                    container.querySelector('.jftiEf.fontBodyMedium')
+                ) {
                     return container;
                 }
             }
@@ -45,20 +46,54 @@ async function findAndScrollReviewsContainer(page) {
             return null;
         }
 
+        // Count reviews using the tutorial's selector
+        const getReviewCount = () => {
+            const reviews = document.querySelectorAll('.jftiEf.fontBodyMedium');
+            return reviews.length;
+        };
+
         const scrollable = await getScrollableElement();
         if (!scrollable) {
-            return { success: false, message: 'Could not find scrollable container' };
+            console.error('Could not find scrollable container');
+            return 0;
         }
 
-        // Perform the scroll
-        if (scrollable.scrollTo) {
-            scrollable.scrollTo(0, scrollable.scrollHeight);
-        } else {
-            scrollable.scrollTop = scrollable.scrollHeight;
+        let lastCount = getReviewCount();
+        let noChangeCount = 0;
+        const maxTries = 15; // More attempts than tutorial's 10
+        let scrollAttempts = 0;
+        const maxScrollAttempts = 500; // Safety limit
+
+        while (noChangeCount < maxTries && scrollAttempts < maxScrollAttempts) {
+            // Check if we've reached our target
+            const currentCount = getReviewCount();
+            if (targetReviews !== Infinity && currentCount >= targetReviews) {
+                return currentCount;
+            }
+
+            // Scroll to bottom of the container
+            if (scrollable.scrollTo) {
+                scrollable.scrollTo(0, scrollable.scrollHeight);
+            } else {
+                scrollable.scrollTop = scrollable.scrollHeight;
+            }
+
+            // Wait for new content to load
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+
+            const newCount = getReviewCount();
+            if (newCount === lastCount) {
+                noChangeCount++;
+            } else {
+                noChangeCount = 0;
+                lastCount = newCount;
+            }
+
+            scrollAttempts++;
         }
 
-        return { success: true, scrollHeight: scrollable.scrollHeight };
-    });
+        return getReviewCount();
+    }, maxReviews);
 }
 
 /**
@@ -68,21 +103,16 @@ async function findAndScrollReviewsContainer(page) {
  */
 async function countReviews(page) {
     return page.evaluate(() => {
-        // Primary: data-review-id attribute (most reliable)
+        // Use the same selector as the tutorial
+        const reviews = document.querySelectorAll('.jftiEf.fontBodyMedium');
+        if (reviews.length > 0) return reviews.length;
+        
+        // Fallbacks
         const byDataId = document.querySelectorAll('div[data-review-id]');
         if (byDataId.length > 0) return byDataId.length;
         
-        // Fallback: jftiEf class (common review container class)
-        const byClass = document.querySelectorAll('div.jftiEf.fontBodyMedium');
+        const byClass = document.querySelectorAll('div.jftiEf');
         if (byClass.length > 0) return byClass.length;
-        
-        // Fallback: jftiEf without fontBodyMedium
-        const byClassAlt = document.querySelectorAll('div.jftiEf');
-        if (byClassAlt.length > 0) return byClassAlt.length;
-        
-        // Fallback: Find by "Photo of" buttons (each review has one)
-        const photoButtons = document.querySelectorAll('button[aria-label^="Photo of"]');
-        if (photoButtons.length > 0) return photoButtons.length;
         
         return 0;
     });
@@ -90,119 +120,75 @@ async function countReviews(page) {
 
 /**
  * Scroll the reviews panel to load more reviews
- * Uses the auto-scroll approach similar to the tutorial
+ * Uses the auto-scroll approach from the tutorial
  * @param {Object} page - Puppeteer page
  * @param {number} maxReviews - Maximum reviews needed
  * @param {Object} log - Logger instance (optional)
  * @returns {Object} - Scroll count and whether end was reached
  */
 export async function scrollReviewsPanel(page, maxReviews, log = console) {
-    // Calculate max scrolls based on reviews needed
-    // Each scroll loads approximately 3-5 reviews
-    const maxScrolls = Math.min(300, Math.max(10, Math.ceil(maxReviews / 3) + 20));
-    const maxNoChangeAttempts = 10; // How many times to try before giving up
+    log.info?.(`📜 Starting review scroll (target: ${maxReviews === Infinity ? 'unlimited' : maxReviews})`);
     
-    let scrollCount = 0;
-    let previousCount = 0;
-    let noChangeCount = 0;
-
-    log.info?.(`📜 Starting review scroll (target: ${maxReviews === Infinity ? 'unlimited' : maxReviews}, max scrolls: ${maxScrolls})`);
-
-    while (scrollCount < maxScrolls && noChangeCount < maxNoChangeAttempts) {
-        // Count current reviews
-        const currentReviewCount = await countReviews(page);
-
-        // If we have enough reviews, stop scrolling early
-        if (currentReviewCount >= maxReviews) {
-            log.info?.(`📜 Loaded ${currentReviewCount} reviews (target reached)`);
-            return { scrollCount, reachedEnd: false, reviewsLoaded: currentReviewCount };
-        }
-
-        // Try to scroll using the container scroll method (most reliable)
-        const scrollResult = await findAndScrollReviewsContainer(page);
+    // Get initial count
+    const initialCount = await countReviews(page);
+    log.info?.(`📜 Initial review count: ${initialCount}`);
+    
+    // If we already have enough reviews, return early
+    if (initialCount >= maxReviews) {
+        log.info?.(`📜 Already have ${initialCount} reviews (target: ${maxReviews})`);
+        return { scrollCount: 0, reachedEnd: false, reviewsLoaded: initialCount };
+    }
+    
+    // Run the auto-scroll function inside the browser
+    // This is the key change - everything happens in browser context like the tutorial
+    log.info?.(`📜 Starting auto-scroll in browser context...`);
+    const totalReviews = await autoScrollInBrowser(page, maxReviews);
+    
+    log.info?.(`📜 Auto-scroll complete. Loaded ${totalReviews} reviews`);
+    
+    // Additional fallback: if auto-scroll didn't work well, try manual scrolling
+    if (totalReviews < maxReviews && totalReviews < 50) {
+        log.info?.(`📜 Attempting fallback scroll methods...`);
         
-        if (!scrollResult.success) {
-            log.debug?.(`📜 Container scroll failed, trying fallback methods...`);
-            
-            // Fallback 1: Try mouse wheel scrolling on a review element
-            const reviewElement = await page.$('div[data-review-id]') || 
-                                 await page.$('div.jftiEf') ||
-                                 await page.$('button[aria-label^="Photo of"]');
+        // Try mouse wheel scrolling as fallback
+        for (let attempt = 0; attempt < 20; attempt++) {
+            const reviewElement = await page.$('.jftiEf.fontBodyMedium') || 
+                                 await page.$('div[data-review-id]');
             
             if (reviewElement) {
                 const box = await reviewElement.boundingBox();
                 if (box) {
-                    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+                    // Move to middle of reviews area
+                    await page.mouse.move(box.x + 100, box.y + 200);
+                    
+                    // Scroll with mouse wheel
                     for (let i = 0; i < 5; i++) {
-                        await page.mouse.wheel({ deltaY: 800 });
-                        await randomDelay(200, 400);
-                    }
-                }
-            } else {
-                // Fallback 2: Try keyboard navigation
-                const mainPanel = await page.$('[role="main"]');
-                if (mainPanel) {
-                    await mainPanel.click();
-                    for (let i = 0; i < 3; i++) {
-                        await page.keyboard.press('PageDown');
-                        await randomDelay(200, 300);
+                        await page.mouse.wheel({ deltaY: 1000 });
+                        await randomDelay(300, 500);
                     }
                 }
             }
-        }
-
-        // Wait for Google Maps to load more reviews (lazy loading needs time)
-        await randomDelay(1500, 2500);
-
-        // Get updated review count
-        const newReviewCount = await countReviews(page);
-        
-        // Log progress every 10 scrolls or when count changes significantly
-        if (scrollCount % 10 === 0 || newReviewCount - currentReviewCount > 5) {
-            log.info?.(`📜 Scroll ${scrollCount}: ${newReviewCount} reviews loaded`);
-        }
-
-        // Check if review count changed
-        if (newReviewCount === previousCount) {
-            noChangeCount++;
-            log.debug?.(`📜 No new reviews loaded (attempt ${noChangeCount}/${maxNoChangeAttempts})`);
             
-            // Wait longer and try more aggressive scrolling
-            await randomDelay(2000, 3000);
+            await randomDelay(1500, 2000);
             
-            // Try clicking "More reviews" button if it exists
-            const clickedMore = await page.evaluate(() => {
-                const moreBtn = document.querySelector('button[aria-label*="More reviews"]');
-                if (moreBtn && !moreBtn.disabled) {
-                    moreBtn.click();
-                    return true;
-                }
-                return false;
-            });
-            
-            if (clickedMore) {
-                log.debug?.(`📜 Clicked "More reviews" button`);
-                await randomDelay(2000, 3000);
-                noChangeCount = 0; // Reset counter since we took an action
+            const newCount = await countReviews(page);
+            if (newCount >= maxReviews || newCount === totalReviews) {
+                break;
             }
-        } else {
-            noChangeCount = 0;
-            log.debug?.(`📜 Loaded ${newReviewCount} reviews so far...`);
+            
+            if (attempt % 5 === 0) {
+                log.info?.(`📜 Fallback scroll attempt ${attempt}: ${newCount} reviews`);
+            }
         }
-
-        previousCount = newReviewCount;
-        scrollCount++;
     }
-
-    // Final count
+    
     const finalCount = await countReviews(page);
+    log.info?.(`📜 Finished scrolling. Total reviews loaded: ${finalCount}`);
     
-    if (noChangeCount >= maxNoChangeAttempts) {
-        log.info?.(`📜 Reached end of reviews (no new reviews after ${maxNoChangeAttempts} attempts, ${finalCount} total)`);
-        return { scrollCount, reachedEnd: true, reviewsLoaded: finalCount };
-    }
-    
-    log.info?.(`📜 Finished scrolling reviews (${finalCount} loaded, ${scrollCount} scrolls)`);
-    return { scrollCount, reachedEnd: false, reviewsLoaded: finalCount };
+    return { 
+        scrollCount: 0, 
+        reachedEnd: finalCount < maxReviews, 
+        reviewsLoaded: finalCount 
+    };
 }
 
