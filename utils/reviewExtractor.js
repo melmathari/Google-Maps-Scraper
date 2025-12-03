@@ -8,10 +8,11 @@ import { Actor } from 'apify';
  * @param {Object} business - Business object with url and name
  * @param {number} maxReviews - Maximum reviews to extract (0 or Infinity for unlimited)
  * @param {boolean} extractShareLinks - Whether to extract share links for reviews
+ * @param {boolean} debugScreenshots - Whether to capture debug screenshots
  * @param {Object} log - Logger instance
  * @returns {Array} Array of review objects
  */
-export async function extractReviewsFromListing(page, business, maxReviews, extractShareLinks = false, log = console) {
+export async function extractReviewsFromListing(page, business, maxReviews, extractShareLinks = false, debugScreenshots = false, log = console) {
     const isUnlimited = maxReviews === 0 || maxReviews === Infinity || maxReviews === null || maxReviews === undefined;
     const targetReviews = isUnlimited ? Infinity : maxReviews;
     
@@ -45,7 +46,7 @@ export async function extractReviewsFromListing(page, business, maxReviews, extr
         await waitForSidebar(page, log);
         
         // Click on Reviews tab to open reviews panel
-        const reviewsOpened = await clickReviewsTab(page, log);
+        const reviewsOpened = await clickReviewsTab(page, debugScreenshots, log);
         if (!reviewsOpened) {
             log.warning(`Could not open reviews tab for: ${business.name}`);
             await closeSidebar(page, log);
@@ -204,7 +205,7 @@ async function waitForSidebar(page, log) {
 /**
  * Click on the Reviews tab to open the reviews panel
  */
-async function clickReviewsTab(page, log) {
+async function clickReviewsTab(page, debugScreenshots, log) {
     try {
         // First, wait for the Reviews tab/button to appear
         // On Apify/proxies, this can take several seconds after the sidebar loads
@@ -356,14 +357,16 @@ async function clickReviewsTab(page, log) {
                     reviewsLoaded = true;
                     log.info(`✓ Reviews panel loaded (selector: ${selector.substring(0, 30)}...)`);
                     
-                    // DEBUG: Take screenshot when reviews panel loads
-                    try {
-                        const screenshot1 = await page.screenshot({ fullPage: false });
-                        const kvStore = await Actor.openKeyValueStore();
-                        await kvStore.setValue(`debug-reviews-panel-loaded-${Date.now()}`, screenshot1, { contentType: 'image/png' });
-                        log.info('📸 Screenshot saved: reviews-panel-loaded');
-                    } catch (ssError) {
-                        log.warning(`Could not save screenshot: ${ssError.message}`);
+                    // DEBUG: Take screenshot when reviews panel loads (if enabled)
+                    if (debugScreenshots) {
+                        try {
+                            const screenshot1 = await page.screenshot({ fullPage: false });
+                            const kvStore = await Actor.openKeyValueStore();
+                            await kvStore.setValue(`debug-reviews-panel-loaded-${Date.now()}`, screenshot1, { contentType: 'image/png' });
+                            log.info('📸 Screenshot saved: reviews-panel-loaded');
+                        } catch (ssError) {
+                            log.warning(`Could not save screenshot: ${ssError.message}`);
+                        }
                     }
                     
                     break;
@@ -465,14 +468,16 @@ async function clickReviewsTab(page, log) {
                         
                         log.info(`✓ Initial reviews stabilized at ${currentReviewCount}`);
                         
-                        // DEBUG: Take screenshot when initial reviews have stabilized
-                        try {
-                            const screenshot2 = await page.screenshot({ fullPage: false });
-                            const kvStore = await Actor.openKeyValueStore();
-                            await kvStore.setValue(`debug-reviews-stabilized-${currentReviewCount}-${Date.now()}`, screenshot2, { contentType: 'image/png' });
-                            log.info(`📸 Screenshot saved: reviews-stabilized-${currentReviewCount}`);
-                        } catch (ssError) {
-                            log.warning(`Could not save screenshot: ${ssError.message}`);
+                        // DEBUG: Take screenshot when initial reviews have stabilized (if enabled)
+                        if (debugScreenshots) {
+                            try {
+                                const screenshot2 = await page.screenshot({ fullPage: false });
+                                const kvStore = await Actor.openKeyValueStore();
+                                await kvStore.setValue(`debug-reviews-stabilized-${currentReviewCount}-${Date.now()}`, screenshot2, { contentType: 'image/png' });
+                                log.info(`📸 Screenshot saved: reviews-stabilized-${currentReviewCount}`);
+                            } catch (ssError) {
+                                log.warning(`Could not save screenshot: ${ssError.message}`);
+                            }
                         }
                         
                         break;

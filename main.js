@@ -38,6 +38,7 @@ await Actor.main(async () => {
         extractReviews: shouldExtractReviews = false,
         maxReviews: inputMaxReviews = 0,
         extractReviewShareLink = false,
+        debugReviewScreenshots = false,
         // Enrichment options
         enrichWebsiteData = false,
         followContactPage = true
@@ -388,7 +389,7 @@ await Actor.main(async () => {
                                 if (shouldExtractReviews) {
                                     log.info(`📝 Extracting reviews for: ${business.name}`);
                                     try {
-                                        reviews = await extractReviewsFromListing(page, business, maxReviews, extractReviewShareLink, log);
+                                        reviews = await extractReviewsFromListing(page, business, maxReviews, extractReviewShareLink, debugReviewScreenshots, log);
                                         log.info(`✓ Extracted ${reviews.length} reviews for: ${business.name}`);
                                     } catch (reviewError) {
                                         log.warning(`Failed to extract reviews for ${business.name}: ${reviewError.message}`);

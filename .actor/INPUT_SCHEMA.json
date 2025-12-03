@@ -133,6 +133,13 @@
       "editor": "checkbox",
       "default": false
     },
+    "debugReviewScreenshots": {
+      "title": "Debug Review Screenshots",
+      "type": "boolean",
+      "description": "When enabled, capture screenshots during review extraction for debugging purposes. Screenshots are saved to the key-value store.",
+      "editor": "checkbox",
+      "default": false
+    },
     "enrichWebsiteData": {
       "sectionCaption": "Website Enrichment (Emails & Social)",
       "title": "Enrich with Website Data",
