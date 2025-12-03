@@ -706,6 +706,7 @@ await Actor.main(async () => {
         location = null,
         maxResults: inputMaxResults,
         scrapeDetails = false,
+        skipSponsored = true,
         proxyConfiguration: proxyConfig = { useApifyProxy: true, apifyProxyGroups: ['RESIDENTIAL'] },
         minDelay = 1,
         maxDelay = 3
@@ -725,6 +726,7 @@ await Actor.main(async () => {
     console.log(`📍 Location: ${location || 'Not specified'}`);
     console.log(`🎯 Max results: ${isUnlimited ? 'Unlimited' : maxResults}`);
     console.log(`📄 Scrape details: ${scrapeDetails ? 'Yes' : 'No'}`);
+    console.log(`🚫 Skip sponsored: ${skipSponsored ? 'Yes' : 'No'}`);
     console.log(`🔒 Use Apify proxy: ${proxyConfig?.useApifyProxy ? 'Yes' : 'No'}`);
     if (proxyConfig?.useApifyProxy) {
         console.log(`   Proxy groups: ${proxyConfig.apifyProxyGroups?.join(', ') || 'AUTO'}`);
@@ -839,8 +841,16 @@ await Actor.main(async () => {
 
                     // Save or process businesses
                     const newBusinesses = [];
+                    let skippedSponsored = 0;
+                    
                     for (const business of businesses) {
                         if (scrapedCount >= maxResults) break;
+
+                        // Skip sponsored results if option is enabled
+                        if (skipSponsored && business.isSponsored) {
+                            skippedSponsored++;
+                            continue;
+                        }
 
                         if (!scrapedUrls.has(business.url)) {
                             scrapedUrls.add(business.url);
@@ -858,6 +868,10 @@ await Actor.main(async () => {
                                 await Dataset.pushData(business);
                             }
                         }
+                    }
+                    
+                    if (skippedSponsored > 0) {
+                        log.info(`⏭️  Skipped ${skippedSponsored} sponsored result(s)`);
                     }
 
                     log.info(`✓ Found ${newBusinesses.length} new businesses (Total: ${scrapedCount}/${maxResults})`);
