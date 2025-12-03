@@ -132,6 +132,21 @@
       "description": "When enabled, extract the shareable link for each review. This adds extra time as it requires clicking the share button for each review.",
       "editor": "checkbox",
       "default": false
+    },
+    "enrichWebsiteData": {
+      "sectionCaption": "Website Enrichment (Emails & Social)",
+      "title": "Enrich with Website Data",
+      "type": "boolean",
+      "description": "When enabled, visit each business website to extract email addresses, social media links (Facebook, Instagram, LinkedIn, Twitter/X), and contact page URLs. This is ideal for B2B lead generation.",
+      "editor": "checkbox",
+      "default": false
+    },
+    "followContactPage": {
+      "title": "Follow Contact Pages",
+      "type": "boolean",
+      "description": "When enrichment is enabled, also visit the contact page (if found) to extract additional emails and data.",
+      "editor": "checkbox",
+      "default": true
     }
   },
   "required": ["searchQuery"]

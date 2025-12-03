@@ -5,6 +5,7 @@ import { scrollSidebar } from './utils/scroll.js';
 import { extractBusinessListings } from './utils/listingExtractor.js';
 import { extractBusinessDetails } from './utils/detailsExtractor.js';
 import { extractReviewsFromListing } from './utils/reviewExtractor.js';
+import { extractEnrichmentData, calculateQualityScore } from './utils/enrichmentExtractor.js';
 
 /**
  * Main actor entry point
@@ -36,7 +37,10 @@ await Actor.main(async () => {
         // Review extraction options
         extractReviews: shouldExtractReviews = false,
         maxReviews: inputMaxReviews = 0,
-        extractReviewShareLink = false
+        extractReviewShareLink = false,
+        // Enrichment options
+        enrichWebsiteData = false,
+        followContactPage = true
     } = input;
 
     // Handle maxResults: default 100, if 0 or blank = unlimited
@@ -68,6 +72,10 @@ await Actor.main(async () => {
     if (shouldExtractReviews) {
         console.log(`   Max reviews per business: ${isReviewsUnlimited ? 'Unlimited' : maxReviews}`);
         console.log(`   Extract share links: ${extractReviewShareLink ? 'Yes' : 'No'}`);
+    }
+    console.log(`🔗 Enrich website data: ${enrichWebsiteData ? 'Yes' : 'No'}`);
+    if (enrichWebsiteData) {
+        console.log(`   Follow contact pages: ${followContactPage ? 'Yes' : 'No'}`);
     }
     if (proxyConfig?.useApifyProxy) {
         console.log(`   Proxy groups: ${proxyConfig.apifyProxyGroups?.join(', ') || 'AUTO'}`);
@@ -178,6 +186,21 @@ await Actor.main(async () => {
 
                 await extractBusinessDetails(page, business);
                 
+                // Extract enrichment data if enabled and website exists
+                let enrichment = null;
+                if (enrichWebsiteData && business.website) {
+                    try {
+                        enrichment = await extractEnrichmentData(page, business.website, {
+                            followContactPage,
+                            timeout: 15000,
+                            log
+                        });
+                    } catch (enrichError) {
+                        log.warning(`Failed to enrich ${business.name}: ${enrichError.message}`);
+                    }
+                    await randomDelay(minDelay * 1000, maxDelay * 1000);
+                }
+                
                 // Clean data types before saving
                 const cleanBusiness = {
                     name: String(business.name || 'Unknown'),
@@ -193,10 +216,12 @@ await Actor.main(async () => {
                     plusCode: business.plusCode || null,
                     isSponsored: Boolean(business.isSponsored),
                     scrapedAt: business.scrapedAt || new Date().toISOString(),
-                    reviews: business.reviews || null
+                    reviews: business.reviews || null,
+                    enrichment: enrichment || null,
+                    quality_score: calculateQualityScore({ ...business, enrichment })
                 };
                 await Dataset.pushData(cleanBusiness);
-                log.info(`✓ Saved details for: ${cleanBusiness.name}${business.reviews ? ` (with ${business.reviews.length} reviews)` : ''}`);
+                log.info(`✓ Saved details for: ${cleanBusiness.name}${business.reviews ? ` (with ${business.reviews.length} reviews)` : ''}${enrichment?.emails_found?.length ? ` (${enrichment.emails_found.length} emails)` : ''}`);
 
                 await randomDelay(minDelay * 1000, maxDelay * 1000);
 
@@ -380,6 +405,21 @@ await Actor.main(async () => {
                                         userData: { business }
                                     }]);
                                 } else {
+                                    // Extract enrichment data if enabled and website exists
+                                    let enrichment = null;
+                                    if (enrichWebsiteData && business.website) {
+                                        try {
+                                            enrichment = await extractEnrichmentData(page, business.website, {
+                                                followContactPage,
+                                                timeout: 15000,
+                                                log
+                                            });
+                                        } catch (enrichError) {
+                                            log.warning(`Failed to enrich ${business.name}: ${enrichError.message}`);
+                                        }
+                                        await randomDelay(minDelay * 1000, maxDelay * 1000);
+                                    }
+                                    
                                     // Clean data types before saving
                                     const cleanBusiness = {
                                         name: String(business.name || 'Unknown'),
@@ -393,9 +433,11 @@ await Actor.main(async () => {
                                         hoursStatus: business.hoursStatus || null,
                                         isSponsored: Boolean(business.isSponsored),
                                         scrapedAt: new Date().toISOString(),
-                                        reviews: reviews || []
+                                        reviews: reviews || [],
+                                        enrichment: enrichment || null,
+                                        quality_score: calculateQualityScore({ ...business, enrichment })
                                     };
-                                    log.info(`💾 Saving: ${cleanBusiness.name} with ${cleanBusiness.reviews.length} reviews`);
+                                    log.info(`💾 Saving: ${cleanBusiness.name} with ${cleanBusiness.reviews.length} reviews${enrichment?.emails_found?.length ? ` (${enrichment.emails_found.length} emails)` : ''}`);
                                     await Dataset.pushData(cleanBusiness);
                                 }
                             }
