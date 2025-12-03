@@ -35,13 +35,6 @@
       "editor": "checkbox",
       "default": false
     },
-    "skipSponsored": {
-      "title": "Skip Sponsored Results",
-      "type": "boolean",
-      "description": "Skip sponsored/ad listings from the results. Enable this to only get organic search results.",
-      "editor": "checkbox",
-      "default": true
-    },
     "proxyConfiguration": {
       "title": "Proxy Configuration",
       "type": "object",
