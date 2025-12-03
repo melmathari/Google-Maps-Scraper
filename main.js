@@ -4,7 +4,7 @@ import { randomDelay, constructGoogleMapsUrl, captureDebugScreenshot } from './u
 import { scrollSidebar } from './utils/scroll.js';
 import { extractBusinessListings } from './utils/listingExtractor.js';
 import { extractBusinessDetails } from './utils/detailsExtractor.js';
-import { extractReviews } from './utils/reviewExtractor.js';
+import { extractReviewsFromListing } from './utils/reviewExtractor.js';
 
 /**
  * Main actor entry point
@@ -98,7 +98,7 @@ await Actor.main(async () => {
     // Create crawler
     const crawler = new PuppeteerCrawler({
         proxyConfiguration,
-        maxRequestsPerCrawl: (scrapeDetails || shouldExtractReviews) ? maxResults * 2 : 1,
+        maxRequestsPerCrawl: scrapeDetails ? maxResults * 2 : 1,
         maxConcurrency: 1, // Google Maps requires low concurrency
         requestHandlerTimeoutSecs: 180,
         navigationTimeoutSecs: 60,
@@ -129,8 +129,8 @@ await Actor.main(async () => {
             const isSearchPage = url.includes('/maps/search/');
             const isBusinessPage = url.includes('/maps/place/');
 
-            if (isBusinessPage && (scrapeDetails || shouldExtractReviews)) {
-                // Extract business details and/or reviews
+            if (isBusinessPage && scrapeDetails) {
+                // Extract business details
                 const { business } = request.userData;
 
                 if (!business) {
@@ -138,23 +138,7 @@ await Actor.main(async () => {
                     return;
                 }
 
-                // Extract business details if requested
-                if (scrapeDetails) {
-                    await extractBusinessDetails(page, business);
-                }
-                
-                // Extract reviews if requested
-                let reviews = null;
-                if (shouldExtractReviews) {
-                    log.info(`📝 Extracting reviews for: ${business.name}`);
-                    try {
-                        reviews = await extractReviews(page, maxReviews, extractReviewShareLink, log);
-                        log.info(`✓ Extracted ${reviews.length} reviews for: ${business.name}`);
-                    } catch (reviewError) {
-                        log.warning(`Failed to extract reviews for ${business.name}: ${reviewError.message}`);
-                        reviews = [];
-                    }
-                }
+                await extractBusinessDetails(page, business);
                 
                 // Clean data types before saving
                 const cleanBusiness = {
@@ -171,10 +155,10 @@ await Actor.main(async () => {
                     plusCode: business.plusCode || null,
                     isSponsored: Boolean(business.isSponsored),
                     scrapedAt: business.scrapedAt || new Date().toISOString(),
-                    reviews: reviews
+                    reviews: business.reviews || null
                 };
                 await Dataset.pushData(cleanBusiness);
-                log.info(`✓ Saved ${scrapeDetails ? 'details' : 'data'}${shouldExtractReviews ? ` and ${reviews?.length || 0} reviews` : ''} for: ${cleanBusiness.name}`);
+                log.info(`✓ Saved details for: ${cleanBusiness.name}${business.reviews ? ` (with ${business.reviews.length} reviews)` : ''}`);
 
                 await randomDelay(minDelay * 1000, maxDelay * 1000);
 
@@ -336,8 +320,23 @@ await Actor.main(async () => {
                                 scrapedUrls.add(business.url);
                                 scrapedCount++;
 
-                                if (scrapeDetails || shouldExtractReviews) {
-                                    // Add business detail page to queue for details and/or reviews
+                                // Extract reviews by clicking on the listing (opens sidebar)
+                                let reviews = null;
+                                if (shouldExtractReviews) {
+                                    log.info(`📝 Extracting reviews for: ${business.name}`);
+                                    try {
+                                        reviews = await extractReviewsFromListing(page, business, maxReviews, extractReviewShareLink, log);
+                                        log.info(`✓ Extracted ${reviews.length} reviews for: ${business.name}`);
+                                    } catch (reviewError) {
+                                        log.warning(`Failed to extract reviews for ${business.name}: ${reviewError.message}`);
+                                        reviews = [];
+                                    }
+                                    await randomDelay(minDelay * 1000, maxDelay * 1000);
+                                }
+
+                                if (scrapeDetails) {
+                                    // Add business detail page to queue for full details
+                                    business.reviews = reviews;
                                     await crawler.addRequests([{
                                         url: business.url,
                                         userData: { business }
@@ -356,7 +355,7 @@ await Actor.main(async () => {
                                         hoursStatus: business.hoursStatus || null,
                                         isSponsored: Boolean(business.isSponsored),
                                         scrapedAt: business.scrapedAt || new Date().toISOString(),
-                                        reviews: null
+                                        reviews: reviews
                                     };
                                     await Dataset.pushData(cleanBusiness);
                                 }

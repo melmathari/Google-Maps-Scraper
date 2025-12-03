@@ -100,6 +100,30 @@
       "type": "boolean",
       "description": "When enabled, skip listings that have neither a phone number nor email address. Only return listings with at least one contact method.",
       "default": false
+    },
+    "extractReviews": {
+      "sectionCaption": "Review Extraction",
+      "title": "Extract Reviews",
+      "type": "boolean",
+      "description": "When enabled, extract reviews for each business listing. This significantly increases scraping time as it requires visiting each business and loading all reviews.",
+      "editor": "checkbox",
+      "default": false
+    },
+    "maxReviews": {
+      "title": "Maximum Reviews Per Business",
+      "type": "integer",
+      "description": "Maximum number of reviews to extract per business. Set to 0 or leave empty for unlimited (all reviews). Default is unlimited.",
+      "editor": "number",
+      "minimum": 0,
+      "default": 0,
+      "unit": "reviews"
+    },
+    "extractReviewShareLink": {
+      "title": "Extract Review Share Links",
+      "type": "boolean",
+      "description": "When enabled, extract the shareable link for each review. This adds extra time as it requires clicking the share button for each review.",
+      "editor": "checkbox",
+      "default": false
     }
   },
   "required": ["searchQuery"]

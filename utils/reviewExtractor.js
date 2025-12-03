@@ -1,107 +1,138 @@
 import { randomDelay } from './utils.js';
 
 /**
- * Scroll the reviews panel to load more reviews
+ * Extract reviews for a business by clicking on its listing to open the sidebar
  * @param {Object} page - Puppeteer page
- * @param {number} maxReviews - Maximum reviews needed
- * @returns {Object} - Scroll count and whether end was reached
+ * @param {Object} business - Business object with url and name
+ * @param {number} maxReviews - Maximum reviews to extract (0 or Infinity for unlimited)
+ * @param {boolean} extractShareLinks - Whether to extract share links for reviews
+ * @param {Object} log - Logger instance
+ * @returns {Array} Array of review objects
  */
-async function scrollReviewsPanel(page, maxReviews) {
-    const maxScrolls = Math.min(300, Math.max(5, Math.ceil(maxReviews / 5) + 10));
+export async function extractReviewsFromListing(page, business, maxReviews, extractShareLinks = false, log = console) {
+    const isUnlimited = maxReviews === 0 || maxReviews === Infinity || maxReviews === null || maxReviews === undefined;
+    const targetReviews = isUnlimited ? Infinity : maxReviews;
     
-    let scrollCount = 0;
-    let previousHeight = 0;
-    let noChangeCount = 0;
-
-    while (scrollCount < maxScrolls) {
-        // Check how many reviews we currently have loaded
-        const currentReviewCount = await page.evaluate(() => {
-            // Reviews are in generic elements that contain share buttons for reviews
-            const shareButtons = document.querySelectorAll('button[aria-label*="Share"][aria-label*="review"]');
-            return shareButtons.length;
-        });
-
-        // If we have enough reviews, stop scrolling early
-        if (currentReviewCount >= maxReviews) {
-            return { scrollCount, reachedEnd: false, reviewsLoaded: currentReviewCount };
+    try {
+        // Click on the listing to open the sidebar
+        const clicked = await clickOnListing(page, business, log);
+        if (!clicked) {
+            log.warning(`Could not click on listing for: ${business.name}`);
+            return [];
         }
-
-        // Scroll the reviews panel
-        const scrollResult = await page.evaluate(() => {
-            // Find the scrollable reviews container
-            // It's usually a div with role="main" or the reviews tab panel
-            const scrollableContainers = [
-                document.querySelector('[role="main"]'),
-                document.querySelector('[data-tab-index="1"]'), // Reviews tab content
-                document.querySelector('.section-scrollbox'),
-                document.querySelector('[aria-label*="Reviews"]'),
-            ];
-            
-            for (const container of scrollableContainers) {
-                if (container && container.scrollHeight > container.clientHeight) {
-                    container.scrollTop = container.scrollHeight;
-                    return { height: container.scrollHeight, found: true };
-                }
-            }
-            
-            // Fallback: scroll the whole document
-            window.scrollTo(0, document.body.scrollHeight);
-            return { height: document.body.scrollHeight, found: false };
-        });
-
-        await randomDelay(1500, 2500);
-
-        // Check for "end of reviews" or loading indicators
-        const reachedEnd = await page.evaluate(() => {
-            const pageText = document.body.innerText || '';
-            // Check if we've loaded all reviews or there's no more content
-            return pageText.includes("No more reviews") ||
-                   pageText.includes("End of reviews");
-        });
-
-        if (reachedEnd) {
-            const finalCount = await page.evaluate(() => {
-                const shareButtons = document.querySelectorAll('button[aria-label*="Share"][aria-label*="review"]');
-                return shareButtons.length;
-            });
-            return { scrollCount, reachedEnd: true, reviewsLoaded: finalCount };
+        
+        await randomDelay(2000, 3000);
+        
+        // Wait for the sidebar to load
+        await waitForSidebar(page, log);
+        
+        // Click on "More reviews" button to expand reviews panel
+        await clickMoreReviewsButton(page, log);
+        await randomDelay(2000, 3000);
+        
+        // Scroll to load more reviews
+        log.info(`📜 Loading reviews (target: ${isUnlimited ? 'unlimited' : targetReviews})...`);
+        await scrollReviewsPanel(page, targetReviews, log);
+        
+        // Extract reviews
+        const reviews = await extractReviewsFromPage(page, targetReviews, log);
+        log.info(`✓ Found ${reviews.length} reviews`);
+        
+        // Extract share links if requested
+        if (extractShareLinks && reviews.length > 0) {
+            log.info('🔗 Extracting share links...');
+            await extractShareLinksForReviews(page, reviews, log);
         }
-
-        // Check if height changed
-        if (scrollResult.height === previousHeight || scrollResult.height === 0) {
-            noChangeCount++;
-            if (noChangeCount >= 5) {
-                const finalCount = await page.evaluate(() => {
-                    const shareButtons = document.querySelectorAll('button[aria-label*="Share"][aria-label*="review"]');
-                    return shareButtons.length;
-                });
-                return { scrollCount, reachedEnd: true, reviewsLoaded: finalCount };
-            }
-            await randomDelay(2000, 3000);
-        } else {
-            noChangeCount = 0;
+        
+        // Close the sidebar/go back to listings
+        await closeSidebar(page, log);
+        await randomDelay(1000, 2000);
+        
+        return reviews;
+        
+    } catch (error) {
+        log.error(`Error extracting reviews: ${error.message}`);
+        // Try to close sidebar before returning
+        try {
+            await closeSidebar(page, log);
+        } catch (e) {
+            // Ignore close errors
         }
-
-        previousHeight = scrollResult.height;
-        scrollCount++;
+        return [];
     }
-
-    const finalCount = await page.evaluate(() => {
-        const shareButtons = document.querySelectorAll('button[aria-label*="Share"][aria-label*="review"]');
-        return shareButtons.length;
-    });
-    return { scrollCount, reachedEnd: false, reviewsLoaded: finalCount };
 }
 
 /**
- * Click on the "More reviews" button to open the reviews panel
+ * Click on a listing in the search results to open its sidebar
  * @param {Object} page - Puppeteer page
- * @returns {boolean} - Whether the click was successful
+ * @param {Object} business - Business object with url and name
+ * @param {Object} log - Logger instance
+ * @returns {boolean} Whether the click was successful
  */
-async function clickMoreReviewsButton(page) {
+async function clickOnListing(page, business, log) {
     try {
-        // Look for the "More reviews (X)" button
+        const clicked = await page.evaluate((businessUrl, businessName) => {
+            // Try to find the listing link by URL
+            const links = document.querySelectorAll('a[href*="/maps/place/"]');
+            for (const link of links) {
+                if (link.href === businessUrl || link.href.includes(encodeURIComponent(businessName))) {
+                    link.click();
+                    return true;
+                }
+            }
+            
+            // Try to find by aria-label containing business name
+            const articles = document.querySelectorAll('div[role="article"]');
+            for (const article of articles) {
+                const ariaLabel = article.getAttribute('aria-label') || '';
+                if (ariaLabel.includes(businessName)) {
+                    const link = article.querySelector('a[href*="/maps/place/"]');
+                    if (link) {
+                        link.click();
+                        return true;
+                    }
+                }
+            }
+            
+            return false;
+        }, business.url, business.name);
+        
+        return clicked;
+    } catch (error) {
+        log.warning(`Error clicking on listing: ${error.message}`);
+        return false;
+    }
+}
+
+/**
+ * Wait for the business sidebar to load
+ * @param {Object} page - Puppeteer page
+ * @param {Object} log - Logger instance
+ */
+async function waitForSidebar(page, log) {
+    try {
+        // Wait for the sidebar to appear with business details
+        await page.waitForFunction(() => {
+            // Look for h1 (business name) or reviews tab button
+            const h1 = document.querySelector('h1');
+            const reviewsTab = document.querySelector('button[aria-label*="Reviews"], [role="tab"][aria-label*="Reviews"]');
+            return h1 || reviewsTab;
+        }, { timeout: 15000 });
+    } catch (error) {
+        log.warning(`Sidebar may not have loaded fully: ${error.message}`);
+    }
+}
+
+/**
+ * Click on the "More reviews" button to open the full reviews panel
+ * @param {Object} page - Puppeteer page
+ * @param {Object} log - Logger instance
+ * @returns {boolean} Whether the click was successful
+ */
+async function clickMoreReviewsButton(page, log) {
+    try {
         const clicked = await page.evaluate(() => {
+            // Look for "More reviews (X)" button
             const buttons = document.querySelectorAll('button');
             for (const btn of buttons) {
                 const ariaLabel = btn.getAttribute('aria-label') || '';
@@ -111,139 +142,155 @@ async function clickMoreReviewsButton(page) {
                     return true;
                 }
             }
+            
+            // Also try clicking on the reviews tab
+            const reviewsTab = document.querySelector('button[aria-label*="Reviews"], [role="tab"][aria-label*="Reviews"]');
+            if (reviewsTab) {
+                reviewsTab.click();
+                return true;
+            }
+            
             return false;
         });
         
         if (clicked) {
+            log.info('✓ Opened reviews panel');
             await randomDelay(2000, 3000);
         }
+        
         return clicked;
     } catch (error) {
-        console.error('Error clicking More reviews button:', error.message);
+        log.warning(`Error clicking More reviews: ${error.message}`);
         return false;
     }
 }
 
 /**
- * Extract reviews from the current page/panel
+ * Scroll the reviews panel to load more reviews
+ * @param {Object} page - Puppeteer page
+ * @param {number} maxReviews - Target number of reviews
+ * @param {Object} log - Logger instance
+ */
+async function scrollReviewsPanel(page, maxReviews, log) {
+    const maxScrolls = Math.min(200, Math.max(5, Math.ceil(maxReviews / 3) + 10));
+    let scrollCount = 0;
+    let previousCount = 0;
+    let noChangeCount = 0;
+    
+    while (scrollCount < maxScrolls) {
+        // Count current reviews
+        const currentCount = await page.evaluate(() => {
+            // Count reviews by share buttons (each review has one)
+            const shareButtons = document.querySelectorAll('button[aria-label*="Share"][aria-label*="review"]');
+            return shareButtons.length;
+        });
+        
+        if (currentCount >= maxReviews) {
+            log.info(`📜 Loaded ${currentCount} reviews (target reached)`);
+            return;
+        }
+        
+        // Check if we're getting new reviews
+        if (currentCount === previousCount) {
+            noChangeCount++;
+            if (noChangeCount >= 5) {
+                log.info(`📜 No more reviews loading (${currentCount} total)`);
+                return;
+            }
+        } else {
+            noChangeCount = 0;
+            previousCount = currentCount;
+        }
+        
+        // Scroll the reviews container
+        await page.evaluate(() => {
+            // Find the scrollable container for reviews
+            const containers = [
+                document.querySelector('[role="main"]'),
+                document.querySelector('.section-scrollbox'),
+                document.querySelector('[data-tab-index="1"]'),
+            ];
+            
+            for (const container of containers) {
+                if (container && container.scrollHeight > container.clientHeight) {
+                    container.scrollTop = container.scrollHeight;
+                    return;
+                }
+            }
+            
+            // Fallback: try scrolling any scrollable div
+            const scrollables = document.querySelectorAll('div[style*="overflow"]');
+            for (const el of scrollables) {
+                if (el.scrollHeight > el.clientHeight) {
+                    el.scrollTop = el.scrollHeight;
+                    return;
+                }
+            }
+        });
+        
+        await randomDelay(1500, 2500);
+        scrollCount++;
+    }
+}
+
+/**
+ * Extract reviews from the current page
  * @param {Object} page - Puppeteer page
  * @param {number} maxReviews - Maximum reviews to extract
- * @param {boolean} extractShareLinks - Whether to extract share links
  * @param {Object} log - Logger instance
  * @returns {Array} Array of review objects
  */
-export async function extractReviews(page, maxReviews, extractShareLinks = false, log = console) {
-    log.info('📝 Starting review extraction...');
-    
-    // First, try to click "More reviews" button to open reviews panel
-    const moreReviewsClicked = await clickMoreReviewsButton(page);
-    if (moreReviewsClicked) {
-        log.info('✓ Opened reviews panel');
-    }
-    
-    await randomDelay(2000, 3000);
-    
-    // Scroll to load more reviews
-    const isUnlimited = maxReviews === 0 || maxReviews === Infinity || maxReviews === null || maxReviews === undefined;
-    const targetReviews = isUnlimited ? Infinity : maxReviews;
-    
-    log.info(`📜 Scrolling to load reviews (target: ${isUnlimited ? 'unlimited' : targetReviews})...`);
-    const scrollResult = await scrollReviewsPanel(page, targetReviews);
-    log.info(`📜 Loaded ${scrollResult.reviewsLoaded} reviews after ${scrollResult.scrollCount} scrolls`);
-    
-    // Extract review data
-    const reviews = await page.evaluate((maxCount) => {
+async function extractReviewsFromPage(page, maxReviews, log) {
+    const reviews = await page.evaluate((max) => {
         const results = [];
         
-        // Find all review containers
-        // Each review has a "Share [name]'s review" button that identifies it
+        // Find all share buttons for reviews (each review has one)
         const shareButtons = document.querySelectorAll('button[aria-label*="Share"][aria-label*="review"]');
         
         for (const shareBtn of shareButtons) {
-            if (results.length >= maxCount) break;
+            if (results.length >= max) break;
             
             try {
-                // Find the parent review container
-                // Walk up the DOM to find the review container (usually 4-6 levels up)
-                let reviewContainer = shareBtn.closest('[data-review-id]') || 
-                                     shareBtn.parentElement?.parentElement?.parentElement?.parentElement?.parentElement;
+                // Get reviewer name from share button label: "Share [Name]'s review"
+                const shareBtnLabel = shareBtn.getAttribute('aria-label') || '';
+                const nameMatch = shareBtnLabel.match(/Share\s+(.+?)['']s\s+review/i);
+                if (!nameMatch) continue;
+                
+                const reviewerName = nameMatch[1].trim();
+                
+                // Find the parent review container by walking up the DOM
+                let reviewContainer = shareBtn;
+                for (let i = 0; i < 10 && reviewContainer; i++) {
+                    reviewContainer = reviewContainer.parentElement;
+                    const name = reviewContainer?.getAttribute('aria-label');
+                    if (name && name.toLowerCase().includes(reviewerName.toLowerCase())) {
+                        break;
+                    }
+                }
                 
                 if (!reviewContainer) {
-                    // Alternative: look for parent with a name attribute that has the reviewer name
-                    let parent = shareBtn.parentElement;
-                    for (let i = 0; i < 10 && parent; i++) {
-                        const name = parent.getAttribute('aria-label') || parent.getAttribute('data-name');
-                        if (name) {
-                            reviewContainer = parent;
-                            break;
-                        }
-                        parent = parent.parentElement;
-                    }
+                    reviewContainer = shareBtn.parentElement?.parentElement?.parentElement?.parentElement?.parentElement;
                 }
-                
-                if (!reviewContainer) reviewContainer = shareBtn.parentElement?.parentElement?.parentElement?.parentElement;
-                
-                // Extract reviewer name from share button label
-                // Format: "Share [Name]'s review." or "Share [Name]'s review"
-                const shareBtnLabel = shareBtn.getAttribute('aria-label') || '';
-                let reviewerName = null;
-                const nameMatch = shareBtnLabel.match(/Share\s+(.+?)['']s\s+review/i);
-                if (nameMatch) {
-                    reviewerName = nameMatch[1].trim();
-                }
-                
-                if (!reviewerName && reviewContainer) {
-                    // Try to get name from container's aria-label or name attribute
-                    reviewerName = reviewContainer.getAttribute('aria-label') || 
-                                  reviewContainer.getAttribute('data-name');
-                }
-                
-                if (!reviewerName) {
-                    // Look for name in buttons within the container
-                    const nameButtons = reviewContainer?.querySelectorAll('button') || [];
-                    for (const btn of nameButtons) {
-                        const label = btn.getAttribute('aria-label') || '';
-                        // Pattern: "Name Local Guide · X reviews" or "Name X reviews"
-                        if (label.includes('review') && !label.includes('Actions') && !label.includes('Share')) {
-                            // Extract just the name part
-                            const parts = label.split(/Local Guide|·|\d+\s*review/i);
-                            if (parts[0]) {
-                                reviewerName = parts[0].trim();
-                                break;
-                            }
-                        }
-                    }
-                }
-                
-                if (!reviewerName) continue;
                 
                 // Extract reviewer subtitle (e.g., "Local Guide · 26 reviews · 3 photos")
                 let reviewerSubtitle = null;
-                const reviewerButtons = reviewContainer?.querySelectorAll('button') || [];
-                for (const btn of reviewerButtons) {
+                const buttons = reviewContainer?.querySelectorAll('button') || [];
+                for (const btn of buttons) {
                     const label = btn.getAttribute('aria-label') || '';
-                    // Look for button with full reviewer info
+                    // Look for button with reviewer info pattern
                     if (label.includes('review') && !label.includes('Actions') && !label.includes('Share') && !label.includes('Photo')) {
-                        // This button has the full info like "Name Local Guide · X reviews · Y photos"
-                        // Extract subtitle part (everything after the name)
-                        const subtitleMatch = label.match(/^[^·]+?(?=Local Guide|·|\d+\s*review)/i);
-                        if (subtitleMatch) {
-                            const nameOnly = subtitleMatch[0].trim();
-                            reviewerSubtitle = label.replace(nameOnly, '').trim();
-                            // Clean up leading separators
-                            reviewerSubtitle = reviewerSubtitle.replace(/^[·\s]+/, '').trim();
-                        } else if (label.includes('·')) {
-                            // Just extract from first · onwards
-                            const idx = label.indexOf('·');
-                            if (idx > 0) {
-                                reviewerSubtitle = label.substring(idx + 1).trim();
-                            }
+                        // Extract everything after the name
+                        const subtitleParts = label.split(/Local Guide|·/i);
+                        if (subtitleParts.length > 1) {
+                            // Reconstruct subtitle from parts after name
+                            const nameEndIdx = label.toLowerCase().indexOf(reviewerName.toLowerCase()) + reviewerName.length;
+                            reviewerSubtitle = label.substring(nameEndIdx).trim().replace(/^[·\s]+/, '');
                         }
                         break;
                     }
                 }
                 
-                // Extract rating
+                // Extract rating from img with "X stars" aria-label
                 let rating = null;
                 const ratingImgs = reviewContainer?.querySelectorAll('img[aria-label*="star"], [role="img"][aria-label*="star"]') || [];
                 for (const img of ratingImgs) {
@@ -256,33 +303,39 @@ export async function extractReviews(page, maxReviews, extractShareLinks = false
                 }
                 
                 // Extract review text
-                // The review text is usually in a span or div without specific aria-labels
+                // The text is usually in a span with the actual review content
                 let reviewText = null;
-                const textElements = reviewContainer?.querySelectorAll('span, div') || [];
+                const textElements = reviewContainer?.querySelectorAll('span.wiI7pd, span[data-expandable-section], span.MyEned') || [];
                 for (const el of textElements) {
-                    // Skip elements that are part of known UI elements
-                    const text = el.textContent?.trim() || '';
-                    if (text.length > 20 && text.length < 5000 &&
-                        !text.includes('review') &&
-                        !text.includes('photo') &&
-                        !text.includes('Local Guide') &&
-                        !text.includes('Like') &&
-                        !text.includes('Share') &&
-                        !text.includes('star') &&
-                        !text.match(/^\d+\s*(like|photo)/i)) {
-                        // Check if this element doesn't contain other significant child elements
-                        const childButtons = el.querySelectorAll('button, a, img');
-                        if (childButtons.length === 0 || text.length > 50) {
-                            reviewText = text;
-                            break;
+                    const text = el.textContent?.trim();
+                    if (text && text.length > 10) {
+                        reviewText = text;
+                        break;
+                    }
+                }
+                
+                // Fallback: look for longest text span
+                if (!reviewText) {
+                    const allSpans = reviewContainer?.querySelectorAll('span') || [];
+                    let longestText = '';
+                    for (const span of allSpans) {
+                        const text = span.textContent?.trim() || '';
+                        // Skip short texts and UI elements
+                        if (text.length > 30 && 
+                            text.length > longestText.length &&
+                            !text.includes('Local Guide') &&
+                            !text.match(/^\d+\s*(review|photo|like)/i)) {
+                            longestText = text;
                         }
+                    }
+                    if (longestText) {
+                        reviewText = longestText;
                     }
                 }
                 
                 // Extract likes count
                 let likesCount = null;
-                const likeButtons = reviewContainer?.querySelectorAll('button') || [];
-                for (const btn of likeButtons) {
+                for (const btn of buttons) {
                     const label = btn.getAttribute('aria-label') || btn.textContent || '';
                     const likesMatch = label.match(/(\d+)\s*like/i);
                     if (likesMatch) {
@@ -291,18 +344,26 @@ export async function extractReviews(page, maxReviews, extractShareLinks = false
                     }
                 }
                 
-                // Store the share button reference for later share link extraction
-                const shareBtnIndex = Array.from(document.querySelectorAll('button[aria-label*="Share"][aria-label*="review"]')).indexOf(shareBtn);
+                // Extract review date (e.g., "2 months ago")
+                let reviewDate = null;
+                const dateSpans = reviewContainer?.querySelectorAll('span.rsqaWe, span[class*="date"]') || [];
+                for (const span of dateSpans) {
+                    const text = span.textContent?.trim() || '';
+                    if (text.match(/\d+\s*(day|week|month|year|hour|minute)s?\s*ago/i) || 
+                        text.match(/^(a|an)\s+(day|week|month|year|hour|minute)\s*ago/i)) {
+                        reviewDate = text;
+                        break;
+                    }
+                }
                 
                 results.push({
                     reviewerName,
                     reviewerSubtitle,
                     rating,
                     reviewText,
-                    reviewDate: null, // Will try to extract separately if needed
+                    reviewDate,
                     likesCount,
-                    shareLink: null, // Will be filled in if extractShareLinks is true
-                    _shareBtnIndex: shareBtnIndex // Internal reference for share link extraction
+                    shareLink: null
                 });
                 
             } catch (error) {
@@ -311,106 +372,112 @@ export async function extractReviews(page, maxReviews, extractShareLinks = false
         }
         
         return results;
-    }, isUnlimited ? Infinity : maxReviews);
-    
-    log.info(`✓ Extracted ${reviews.length} reviews`);
-    
-    // Extract share links if requested
-    if (extractShareLinks && reviews.length > 0) {
-        log.info('🔗 Extracting share links for reviews...');
-        for (let i = 0; i < reviews.length; i++) {
-            const review = reviews[i];
-            try {
-                const shareLink = await extractReviewShareLink(page, review._shareBtnIndex, log);
-                if (shareLink) {
-                    review.shareLink = shareLink;
-                    log.info(`  ✓ Got share link for ${review.reviewerName}`);
-                }
-            } catch (error) {
-                log.warning(`  ✗ Failed to get share link for ${review.reviewerName}: ${error.message}`);
-            }
-            
-            // Clean up internal property
-            delete review._shareBtnIndex;
-            
-            // Small delay between share link extractions
-            if (i < reviews.length - 1) {
-                await randomDelay(500, 1000);
-            }
-        }
-    } else {
-        // Clean up internal properties
-        reviews.forEach(r => delete r._shareBtnIndex);
-    }
+    }, maxReviews);
     
     return reviews;
 }
 
 /**
- * Extract the share link for a specific review
+ * Extract share links for each review
  * @param {Object} page - Puppeteer page
- * @param {number} shareBtnIndex - Index of the share button to click
+ * @param {Array} reviews - Array of review objects to update
  * @param {Object} log - Logger instance
- * @returns {string|null} The share link URL or null
  */
-async function extractReviewShareLink(page, shareBtnIndex, log) {
-    try {
-        // Click the share button
-        const clicked = await page.evaluate((index) => {
-            const shareButtons = document.querySelectorAll('button[aria-label*="Share"][aria-label*="review"]');
-            if (index >= 0 && index < shareButtons.length) {
-                shareButtons[index].click();
-                return true;
+async function extractShareLinksForReviews(page, reviews, log) {
+    for (let i = 0; i < reviews.length; i++) {
+        const review = reviews[i];
+        try {
+            // Click the share button for this review
+            const shareUrl = await page.evaluate(async (reviewerName) => {
+                // Find the share button for this reviewer
+                const shareButtons = document.querySelectorAll('button[aria-label*="Share"][aria-label*="review"]');
+                for (const btn of shareButtons) {
+                    const label = btn.getAttribute('aria-label') || '';
+                    if (label.toLowerCase().includes(reviewerName.toLowerCase())) {
+                        btn.click();
+                        return true;
+                    }
+                }
+                return false;
+            }, review.reviewerName);
+            
+            if (!shareUrl) continue;
+            
+            await randomDelay(1500, 2500);
+            
+            // Extract the share URL from the dialog
+            const url = await page.evaluate(() => {
+                // Look for the textbox with the share URL
+                const textboxes = document.querySelectorAll('input[type="text"], [role="textbox"]');
+                for (const input of textboxes) {
+                    const value = input.value || input.getAttribute('aria-label') || '';
+                    if (value.includes('maps.app.goo.gl') || value.includes('goo.gl/maps')) {
+                        return value;
+                    }
+                }
+                return null;
+            });
+            
+            if (url) {
+                review.shareLink = url;
+                log.info(`  ✓ Got share link for ${review.reviewerName}`);
             }
-            return false;
-        }, shareBtnIndex);
-        
-        if (!clicked) {
-            return null;
+            
+            // Close the share dialog
+            await page.evaluate(() => {
+                const closeBtn = document.querySelector('button[aria-label="Close"]');
+                if (closeBtn) {
+                    closeBtn.click();
+                }
+            });
+            
+            await randomDelay(500, 1000);
+            
+        } catch (error) {
+            log.warning(`  ✗ Failed to get share link for ${review.reviewerName}`);
         }
-        
-        await randomDelay(1000, 2000);
-        
-        // Look for the share dialog and extract the URL
-        const shareUrl = await page.evaluate(() => {
-            // Find the textbox with the share URL
-            // It's usually in a dialog with "Send a link" tab
-            const textboxes = document.querySelectorAll('input[type="text"], input[type="url"], [role="textbox"]');
-            for (const input of textboxes) {
-                const value = input.value || input.getAttribute('aria-label') || input.textContent || '';
-                if (value.includes('maps.app.goo.gl') || value.includes('goo.gl/maps')) {
-                    return value;
-                }
-            }
-            
-            // Also check aria-label which might contain the URL
-            for (const input of textboxes) {
-                const label = input.getAttribute('aria-label') || '';
-                if (label.includes('maps.app.goo.gl') || label.includes('goo.gl/maps')) {
-                    return label;
-                }
-            }
-            
-            return null;
-        });
-        
-        // Close the share dialog
-        await page.evaluate(() => {
-            const closeButtons = document.querySelectorAll('button[aria-label="Close"], button[aria-label="close"]');
-            for (const btn of closeButtons) {
-                btn.click();
-                return true;
-            }
-            // Fallback: press Escape
-            document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27 }));
-        });
-        
-        await randomDelay(500, 1000);
-        
-        return shareUrl;
-    } catch (error) {
-        log.warning(`Error extracting share link: ${error.message}`);
-        return null;
     }
 }
 
+/**
+ * Close the sidebar and go back to the listing view
+ * @param {Object} page - Puppeteer page
+ * @param {Object} log - Logger instance
+ */
+async function closeSidebar(page, log) {
+    try {
+        // Try clicking the back button or close button
+        await page.evaluate(() => {
+            // Look for back arrow button
+            const backBtn = document.querySelector('button[aria-label="Back"], button[aria-label*="back"]');
+            if (backBtn) {
+                backBtn.click();
+                return true;
+            }
+            
+            // Look for close button
+            const closeBtn = document.querySelector('button[aria-label="Close"]');
+            if (closeBtn) {
+                closeBtn.click();
+                return true;
+            }
+            
+            return false;
+        });
+        
+        await randomDelay(1000, 2000);
+        
+        // If still in detail view, try pressing Escape
+        const stillInDetail = await page.evaluate(() => {
+            return !!document.querySelector('h1');
+        });
+        
+        if (stillInDetail) {
+            await page.keyboard.press('Escape');
+            await randomDelay(1000, 1500);
+        }
+        
+    } catch (error) {
+        log.warning(`Error closing sidebar: ${error.message}`);
+    }
+}
