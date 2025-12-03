@@ -4,6 +4,7 @@ import { randomDelay, constructGoogleMapsUrl, captureDebugScreenshot } from './u
 import { scrollSidebar } from './utils/scroll.js';
 import { extractBusinessListings } from './utils/listingExtractor.js';
 import { extractBusinessDetails } from './utils/detailsExtractor.js';
+import { extractReviews } from './utils/reviewExtractor.js';
 
 /**
  * Main actor entry point
@@ -30,12 +31,20 @@ await Actor.main(async () => {
         skipSponsored = false,
         skipWithWebsite = false,
         skipWithPhone = false,
-        skipWithoutContact = false
+        skipWithoutContact = false,
+        // Review extraction options
+        extractReviews: shouldExtractReviews = false,
+        maxReviews: inputMaxReviews = 0,
+        extractReviewShareLink = false
     } = input;
 
     // Handle maxResults: default 100, if 0 or blank = unlimited
     const isUnlimited = inputMaxResults === 0 || inputMaxResults === null || inputMaxResults === undefined || inputMaxResults === '';
     const maxResults = isUnlimited ? Infinity : inputMaxResults;
+
+    // Handle maxReviews: 0 or blank = unlimited
+    const isReviewsUnlimited = inputMaxReviews === 0 || inputMaxReviews === null || inputMaxReviews === undefined || inputMaxReviews === '';
+    const maxReviews = isReviewsUnlimited ? Infinity : inputMaxReviews;
 
     // Validate input
     if (!searchQuery || !searchQuery.trim()) {
@@ -53,6 +62,11 @@ await Actor.main(async () => {
     console.log(`🚫 Skip with website: ${skipWithWebsite ? 'Yes' : 'No'}`);
     console.log(`🚫 Skip with phone: ${skipWithPhone ? 'Yes' : 'No'}`);
     console.log(`🚫 Skip without contact: ${skipWithoutContact ? 'Yes' : 'No'}`);
+    console.log(`📝 Extract reviews: ${shouldExtractReviews ? 'Yes' : 'No'}`);
+    if (shouldExtractReviews) {
+        console.log(`   Max reviews per business: ${isReviewsUnlimited ? 'Unlimited' : maxReviews}`);
+        console.log(`   Extract share links: ${extractReviewShareLink ? 'Yes' : 'No'}`);
+    }
     if (proxyConfig?.useApifyProxy) {
         console.log(`   Proxy groups: ${proxyConfig.apifyProxyGroups?.join(', ') || 'AUTO'}`);
         if (proxyConfig.apifyProxyCountry) {
@@ -84,7 +98,7 @@ await Actor.main(async () => {
     // Create crawler
     const crawler = new PuppeteerCrawler({
         proxyConfiguration,
-        maxRequestsPerCrawl: scrapeDetails ? maxResults * 2 : 1,
+        maxRequestsPerCrawl: (scrapeDetails || shouldExtractReviews) ? maxResults * 2 : 1,
         maxConcurrency: 1, // Google Maps requires low concurrency
         requestHandlerTimeoutSecs: 180,
         navigationTimeoutSecs: 60,
@@ -115,8 +129,8 @@ await Actor.main(async () => {
             const isSearchPage = url.includes('/maps/search/');
             const isBusinessPage = url.includes('/maps/place/');
 
-            if (isBusinessPage && scrapeDetails) {
-                // Extract business details
+            if (isBusinessPage && (scrapeDetails || shouldExtractReviews)) {
+                // Extract business details and/or reviews
                 const { business } = request.userData;
 
                 if (!business) {
@@ -124,7 +138,23 @@ await Actor.main(async () => {
                     return;
                 }
 
-                await extractBusinessDetails(page, business);
+                // Extract business details if requested
+                if (scrapeDetails) {
+                    await extractBusinessDetails(page, business);
+                }
+                
+                // Extract reviews if requested
+                let reviews = null;
+                if (shouldExtractReviews) {
+                    log.info(`📝 Extracting reviews for: ${business.name}`);
+                    try {
+                        reviews = await extractReviews(page, maxReviews, extractReviewShareLink, log);
+                        log.info(`✓ Extracted ${reviews.length} reviews for: ${business.name}`);
+                    } catch (reviewError) {
+                        log.warning(`Failed to extract reviews for ${business.name}: ${reviewError.message}`);
+                        reviews = [];
+                    }
+                }
                 
                 // Clean data types before saving
                 const cleanBusiness = {
@@ -140,10 +170,11 @@ await Actor.main(async () => {
                     priceLevel: business.priceLevel || null,
                     plusCode: business.plusCode || null,
                     isSponsored: Boolean(business.isSponsored),
-                    scrapedAt: business.scrapedAt || new Date().toISOString()
+                    scrapedAt: business.scrapedAt || new Date().toISOString(),
+                    reviews: reviews
                 };
                 await Dataset.pushData(cleanBusiness);
-                log.info(`✓ Saved details for: ${cleanBusiness.name}`);
+                log.info(`✓ Saved ${scrapeDetails ? 'details' : 'data'}${shouldExtractReviews ? ` and ${reviews?.length || 0} reviews` : ''} for: ${cleanBusiness.name}`);
 
                 await randomDelay(minDelay * 1000, maxDelay * 1000);
 
@@ -305,8 +336,8 @@ await Actor.main(async () => {
                                 scrapedUrls.add(business.url);
                                 scrapedCount++;
 
-                                if (scrapeDetails) {
-                                    // Add business detail page to queue
+                                if (scrapeDetails || shouldExtractReviews) {
+                                    // Add business detail page to queue for details and/or reviews
                                     await crawler.addRequests([{
                                         url: business.url,
                                         userData: { business }
@@ -324,7 +355,8 @@ await Actor.main(async () => {
                                         website: business.website || null,
                                         hoursStatus: business.hoursStatus || null,
                                         isSponsored: Boolean(business.isSponsored),
-                                        scrapedAt: business.scrapedAt || new Date().toISOString()
+                                        scrapedAt: business.scrapedAt || new Date().toISOString(),
+                                        reviews: null
                                     };
                                     await Dataset.pushData(cleanBusiness);
                                 }

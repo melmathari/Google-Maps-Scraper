@@ -56,6 +56,44 @@
             "isSponsored": {
                 "type": "boolean",
                 "description": "Whether this is a sponsored/ad listing"
+            },
+            "reviews": {
+                "type": ["array", "null"],
+                "description": "Array of reviews for this business (when extractReviews is enabled)",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "reviewerName": {
+                            "type": "string",
+                            "description": "Name of the reviewer"
+                        },
+                        "reviewerSubtitle": {
+                            "type": ["string", "null"],
+                            "description": "Reviewer subtitle (e.g., 'Local Guide · 26 reviews · 3 photos')"
+                        },
+                        "rating": {
+                            "type": ["integer", "null"],
+                            "description": "Star rating given by the reviewer (1-5)"
+                        },
+                        "reviewText": {
+                            "type": ["string", "null"],
+                            "description": "The review text content"
+                        },
+                        "reviewDate": {
+                            "type": ["string", "null"],
+                            "description": "When the review was posted (relative date like '2 months ago')"
+                        },
+                        "likesCount": {
+                            "type": ["integer", "null"],
+                            "description": "Number of likes on the review"
+                        },
+                        "shareLink": {
+                            "type": ["string", "null"],
+                            "description": "Shareable link for this review (when extractReviewShareLink is enabled)"
+                        }
+                    },
+                    "required": ["reviewerName"]
+                }
             }
         },
         "required": ["name", "url", "scrapedAt"]
