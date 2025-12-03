@@ -205,26 +205,65 @@ export async function extractBusinessListings(page, maxResults) {
                 }
 
                 // Extract website URL from Website button/link
-                const websiteBtn = article.querySelector('a[data-value="Website"], a[aria-label*="Website"], a[href]:not([href*="google.com"]):not([href*="/maps/"])');
+                // Method 1: Direct selector for common patterns
+                const websiteBtn = article.querySelector('a[data-value="Website"], a[aria-label*="Website"], a[data-tooltip*="website" i]');
                 if (websiteBtn) {
-                    const href = websiteBtn.getAttribute('href');
+                    const href = websiteBtn.href || websiteBtn.getAttribute('href');
                     if (href && !href.includes('google.com') && !href.includes('/maps/') && (href.startsWith('http') || href.startsWith('//'))) {
                         website = href.startsWith('//') ? 'https:' + href : href;
                     }
                 }
                 
-                // Also look for website in data attributes
+                // Method 2: Look through all links for website indicators
                 if (!website) {
                     const allLinks = article.querySelectorAll('a[href]');
                     for (const a of allLinks) {
                         const href = a.href || a.getAttribute('href');
-                        const ariaLabel = a.getAttribute('aria-label') || '';
-                        const dataValue = a.getAttribute('data-value') || '';
+                        if (!href || href.includes('google.com') || href.includes('/maps/')) continue;
                         
-                        if ((ariaLabel.toLowerCase().includes('website') || dataValue.toLowerCase() === 'website') 
-                            && href && !href.includes('google.com') && !href.includes('/maps/')) {
+                        const ariaLabel = (a.getAttribute('aria-label') || '').toLowerCase();
+                        const dataValue = (a.getAttribute('data-value') || '').toLowerCase();
+                        const dataTooltip = (a.getAttribute('data-tooltip') || '').toLowerCase();
+                        const title = (a.getAttribute('title') || '').toLowerCase();
+                        
+                        // Check various attributes for "website" indicator
+                        if (ariaLabel.includes('website') || 
+                            dataValue === 'website' || 
+                            dataTooltip.includes('website') ||
+                            title.includes('website')) {
                             website = href;
                             break;
+                        }
+                    }
+                }
+                
+                // Method 3: Look for external links that are not Google/Maps related
+                // These are typically the business website in listing cards
+                if (!website) {
+                    const allLinks = article.querySelectorAll('a[href]');
+                    for (const a of allLinks) {
+                        const href = a.href || a.getAttribute('href');
+                        if (!href) continue;
+                        
+                        // Skip Google and Maps URLs
+                        if (href.includes('google.com') || href.includes('/maps/')) continue;
+                        
+                        // Skip javascript: and # links
+                        if (href.startsWith('javascript:') || href === '#') continue;
+                        
+                        // Check if it's a valid external URL
+                        if (href.startsWith('http://') || href.startsWith('https://') || href.startsWith('//')) {
+                            // Additional check: the parent or link itself often has "Website" text
+                            const parentText = a.parentElement?.textContent?.toLowerCase() || '';
+                            const linkText = a.textContent?.toLowerCase() || '';
+                            
+                            // If link text or nearby text says "website", or it's clearly an external business site
+                            if (linkText.includes('website') || parentText.includes('website') || 
+                                (!href.includes('facebook.com') && !href.includes('instagram.com') && 
+                                 !href.includes('twitter.com') && !href.includes('youtube.com'))) {
+                                website = href.startsWith('//') ? 'https:' + href : href;
+                                break;
+                            }
                         }
                     }
                 }
