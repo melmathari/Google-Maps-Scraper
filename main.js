@@ -29,7 +29,8 @@ await Actor.main(async () => {
         debugScreenshots = false,
         skipSponsored = false,
         skipWithWebsite = false,
-        skipWithPhone = false
+        skipWithPhone = false,
+        skipWithoutContact = false
     } = input;
 
     // Handle maxResults: default 100, if 0 or blank = unlimited
@@ -51,6 +52,7 @@ await Actor.main(async () => {
     console.log(`🚫 Skip sponsored: ${skipSponsored ? 'Yes' : 'No'}`);
     console.log(`🚫 Skip with website: ${skipWithWebsite ? 'Yes' : 'No'}`);
     console.log(`🚫 Skip with phone: ${skipWithPhone ? 'Yes' : 'No'}`);
+    console.log(`🚫 Skip without contact: ${skipWithoutContact ? 'Yes' : 'No'}`);
     if (proxyConfig?.useApifyProxy) {
         console.log(`   Proxy groups: ${proxyConfig.apifyProxyGroups?.join(', ') || 'AUTO'}`);
         if (proxyConfig.apifyProxyCountry) {
@@ -230,76 +232,103 @@ await Actor.main(async () => {
                     }
                     await randomDelay(2000, 3000);
 
-                    // Scroll sidebar to load results (smart scrolling based on maxResults)
-                    const scrollResult = await scrollSidebar(page, maxResults);
-                    log.info(`✓ Scrolling complete: ${scrollResult.scrollCount} scrolls, ~${scrollResult.resultsLoaded} results loaded${scrollResult.reachedEnd ? ' (reached end)' : ''}`);
+                    // Check if any filters are enabled
+                    const filtersEnabled = skipSponsored || skipWithWebsite || skipWithPhone || skipWithoutContact;
+                    
+                    // Keep scrolling and extracting until we have enough filtered results
+                    let reachedEnd = false;
+                    let totalSkipped = 0;
+                    
+                    while (scrapedCount < maxResults && !reachedEnd) {
+                        // Scroll target = already processed + what we still need
+                        // This ensures we keep scrolling past already-seen results
+                        const scrollTarget = scrapedUrls.size + (maxResults - scrapedCount);
+                        
+                        // Scroll sidebar to load more results
+                        const scrollResult = await scrollSidebar(page, scrollTarget);
+                        reachedEnd = scrollResult.reachedEnd;
+                        log.info(`✓ Scrolling: ${scrollResult.scrollCount} scrolls, ~${scrollResult.resultsLoaded} results loaded${reachedEnd ? ' (reached end)' : ''}`);
 
-                    await randomDelay(2000, 3000);
+                        await randomDelay(2000, 3000);
 
-                    // Extract businesses
-                    const businesses = await extractBusinessListings(page, maxResults);
+                        // Extract all available businesses
+                        const businesses = await extractBusinessListings(page, Infinity);
 
-                    if (businesses.length === 0) {
-                        log.warning('⚠️ No businesses found. Try adjusting your search query.');
-                        return;
-                    }
+                        if (businesses.length === 0) {
+                            log.warning('⚠️ No businesses found. Try adjusting your search query.');
+                            break;
+                        }
 
-                    // Save or process businesses
-                    const newBusinesses = [];
-                    let skippedCount = 0;
-                    for (const business of businesses) {
-                        if (scrapedCount >= maxResults) break;
+                        // Process businesses and apply filters
+                        let skippedThisRound = 0;
+                        for (const business of businesses) {
+                            if (scrapedCount >= maxResults) break;
 
-                        if (!scrapedUrls.has(business.url)) {
-                            // Apply filtering - skip listings based on filter settings
-                            // These skipped listings do NOT count towards maxResults
-                            if (skipSponsored && business.isSponsored) {
-                                log.debug(`Skipping ${business.name} - sponsored listing`);
-                                skippedCount++;
-                                continue;
-                            }
-                            if (skipWithWebsite && business.website) {
-                                log.debug(`Skipping ${business.name} - has website: ${business.website}`);
-                                skippedCount++;
-                                continue;
-                            }
-                            if (skipWithPhone && business.phone) {
-                                log.debug(`Skipping ${business.name} - has phone: ${business.phone}`);
-                                skippedCount++;
-                                continue;
-                            }
+                            if (!scrapedUrls.has(business.url)) {
+                                // Apply filtering - skip listings based on filter settings
+                                // These skipped listings do NOT count towards maxResults
+                                if (skipSponsored && business.isSponsored) {
+                                    log.debug(`Skipping ${business.name} - sponsored listing`);
+                                    skippedThisRound++;
+                                    scrapedUrls.add(business.url); // Mark as seen so we don't process again
+                                    continue;
+                                }
+                                if (skipWithWebsite && business.website) {
+                                    log.debug(`Skipping ${business.name} - has website: ${business.website}`);
+                                    skippedThisRound++;
+                                    scrapedUrls.add(business.url);
+                                    continue;
+                                }
+                                if (skipWithPhone && business.phone) {
+                                    log.debug(`Skipping ${business.name} - has phone: ${business.phone}`);
+                                    skippedThisRound++;
+                                    scrapedUrls.add(business.url);
+                                    continue;
+                                }
+                                if (skipWithoutContact && !business.phone && !business.email) {
+                                    log.debug(`Skipping ${business.name} - no contact info (no phone or email)`);
+                                    skippedThisRound++;
+                                    scrapedUrls.add(business.url);
+                                    continue;
+                                }
 
-                            scrapedUrls.add(business.url);
-                            newBusinesses.push(business);
-                            scrapedCount++;
+                                scrapedUrls.add(business.url);
+                                scrapedCount++;
 
-                            if (scrapeDetails) {
-                                // Add business detail page to queue
-                                await crawler.addRequests([{
-                                    url: business.url,
-                                    userData: { business }
-                                }]);
-                            } else {
-                                // Clean data types before saving
-                                const cleanBusiness = {
-                                    name: String(business.name || 'Unknown'),
-                                    url: String(business.url || ''),
-                                    rating: business.rating !== null ? Number(business.rating) : null,
-                                    reviewCount: business.reviewCount !== null ? parseInt(business.reviewCount) : null,
-                                    category: business.category || null,
-                                    address: business.address || null,
-                                    phone: business.phone || null,
-                                    website: business.website || null,
-                                    hoursStatus: business.hoursStatus || null,
-                                    isSponsored: Boolean(business.isSponsored),
-                                    scrapedAt: business.scrapedAt || new Date().toISOString()
-                                };
-                                await Dataset.pushData(cleanBusiness);
+                                if (scrapeDetails) {
+                                    // Add business detail page to queue
+                                    await crawler.addRequests([{
+                                        url: business.url,
+                                        userData: { business }
+                                    }]);
+                                } else {
+                                    // Clean data types before saving
+                                    const cleanBusiness = {
+                                        name: String(business.name || 'Unknown'),
+                                        url: String(business.url || ''),
+                                        rating: business.rating !== null ? Number(business.rating) : null,
+                                        reviewCount: business.reviewCount !== null ? parseInt(business.reviewCount) : null,
+                                        category: business.category || null,
+                                        address: business.address || null,
+                                        phone: business.phone || null,
+                                        website: business.website || null,
+                                        hoursStatus: business.hoursStatus || null,
+                                        isSponsored: Boolean(business.isSponsored),
+                                        scrapedAt: business.scrapedAt || new Date().toISOString()
+                                    };
+                                    await Dataset.pushData(cleanBusiness);
+                                }
                             }
                         }
+                        
+                        totalSkipped += skippedThisRound;
+                        log.info(`✓ Progress: ${scrapedCount}/${isUnlimited ? '∞' : maxResults} collected${totalSkipped > 0 ? `, ${totalSkipped} skipped by filters` : ''}`);
+                        
+                        // If we haven't found enough and haven't reached the end, continue scrolling
+                        if (scrapedCount < maxResults && !reachedEnd) {
+                            log.info(`🔄 Need ${maxResults - scrapedCount} more results, continuing to scroll...`);
+                        }
                     }
-
-                    log.info(`✓ Found ${newBusinesses.length} new businesses (Total: ${scrapedCount}/${isUnlimited ? '∞' : maxResults}${skippedCount > 0 ? `, Skipped: ${skippedCount}` : ''})`);
 
                 } catch (error) {
                     log.error(`Error processing search page: ${error.message}`);

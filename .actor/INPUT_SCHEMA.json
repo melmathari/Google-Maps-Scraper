@@ -94,6 +94,12 @@
       "type": "boolean",
       "description": "When enabled, only return listings that do NOT have a phone number. Useful for finding businesses with incomplete contact info.",
       "default": false
+    },
+    "skipWithoutContact": {
+      "title": "Skip Listings Without Contact Info",
+      "type": "boolean",
+      "description": "When enabled, skip listings that have neither a phone number nor email address. Only return listings with at least one contact method.",
+      "default": false
     }
   },
   "required": ["searchQuery"]
