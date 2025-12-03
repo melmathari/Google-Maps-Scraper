@@ -76,8 +76,14 @@
       "editor": "checkbox",
       "default": false
     },
-    "skipWithWebsite": {
+    "skipSponsored": {
       "sectionCaption": "Filtering Options",
+      "title": "Skip Sponsored Listings",
+      "type": "boolean",
+      "description": "When enabled, skip all sponsored/ad listings and only return organic results.",
+      "default": false
+    },
+    "skipWithWebsite": {
       "title": "Skip Listings With Website",
       "type": "boolean",
       "description": "When enabled, only return listings that do NOT have a website. Useful for finding businesses without web presence for lead generation.",

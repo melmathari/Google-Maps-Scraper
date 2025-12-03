@@ -27,6 +27,7 @@ await Actor.main(async () => {
         minDelay = 1,
         maxDelay = 3,
         debugScreenshots = false,
+        skipSponsored = false,
         skipWithWebsite = false,
         skipWithPhone = false
     } = input;
@@ -47,6 +48,7 @@ await Actor.main(async () => {
     console.log(`📄 Scrape details: ${scrapeDetails ? 'Yes' : 'No'}`);
     console.log(`🔒 Use Apify proxy: ${proxyConfig?.useApifyProxy ? 'Yes' : 'No'}`);
     console.log(`📸 Debug screenshots: ${debugScreenshots ? 'Yes' : 'No'}`);
+    console.log(`🚫 Skip sponsored: ${skipSponsored ? 'Yes' : 'No'}`);
     console.log(`🚫 Skip with website: ${skipWithWebsite ? 'Yes' : 'No'}`);
     console.log(`🚫 Skip with phone: ${skipWithPhone ? 'Yes' : 'No'}`);
     if (proxyConfig?.useApifyProxy) {
@@ -251,6 +253,11 @@ await Actor.main(async () => {
                         if (!scrapedUrls.has(business.url)) {
                             // Apply filtering - skip listings based on filter settings
                             // These skipped listings do NOT count towards maxResults
+                            if (skipSponsored && business.isSponsored) {
+                                log.debug(`Skipping ${business.name} - sponsored listing`);
+                                skippedCount++;
+                                continue;
+                            }
                             if (skipWithWebsite && business.website) {
                                 log.debug(`Skipping ${business.name} - has website: ${business.website}`);
                                 skippedCount++;
