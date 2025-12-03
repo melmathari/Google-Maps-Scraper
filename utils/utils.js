@@ -26,3 +26,35 @@ export function constructGoogleMapsUrl(searchQuery, location = null) {
     return `${baseUrl}${encodeURIComponent(query)}?hl=en`;
 }
 
+/**
+ * Capture debug screenshot and page info when errors occur
+ * @param {Object} page - Puppeteer page
+ * @param {Object} Actor - Apify Actor instance
+ * @param {Object} log - Logger instance
+ * @param {string} prefix - Screenshot name prefix (e.g., 'error', 'consent')
+ * @returns {Object|null} Debug info object or null if capture failed
+ */
+export async function captureDebugScreenshot(page, Actor, log, prefix = 'error') {
+    try {
+        const screenshotKey = `SCREENSHOT-${prefix}-${Date.now()}`;
+        const screenshot = await page.screenshot({ fullPage: false, type: 'png' });
+        await Actor.setValue(screenshotKey, Buffer.from(screenshot), { contentType: 'image/png' });
+        log.info(`📸 Debug screenshot saved as ${screenshotKey}`);
+
+        // Collect debug info about the page state
+        const debugInfo = await page.evaluate(() => ({
+            url: window.location.href,
+            title: document.title,
+            bodyText: document.body?.innerText?.substring(0, 1000) || '',
+            hasConsent: !!document.querySelector('form[action*="consent"]'),
+            hasCaptcha: document.body?.innerText?.includes('captcha') || document.body?.innerText?.includes('unusual traffic')
+        }));
+        log.info(`Debug info: ${JSON.stringify(debugInfo, null, 2)}`);
+
+        return debugInfo;
+    } catch (screenshotError) {
+        log.warning(`Could not capture debug screenshot: ${screenshotError.message}`);
+        return null;
+    }
+}
+

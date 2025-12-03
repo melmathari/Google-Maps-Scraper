@@ -68,6 +68,13 @@
       "maximum": 20,
       "default": 3,
       "unit": "seconds"
+    },
+    "debugScreenshots": {
+      "title": "Debug Screenshots",
+      "type": "boolean",
+      "description": "Capture screenshots when errors occur for debugging purposes. Useful for troubleshooting but increases storage usage.",
+      "editor": "checkbox",
+      "default": false
     }
   },
   "required": ["searchQuery"]

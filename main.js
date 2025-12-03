@@ -1,6 +1,6 @@
 import { Actor } from 'apify';
 import { PuppeteerCrawler, Dataset } from 'crawlee';
-import { randomDelay, constructGoogleMapsUrl } from './utils/utils.js';
+import { randomDelay, constructGoogleMapsUrl, captureDebugScreenshot } from './utils/utils.js';
 import { scrollSidebar } from './utils/scroll.js';
 import { extractBusinessListings } from './utils/listingExtractor.js';
 import { extractBusinessDetails } from './utils/detailsExtractor.js';
@@ -25,7 +25,8 @@ await Actor.main(async () => {
         scrapeDetails = false,
         proxyConfiguration: proxyConfig = { useApifyProxy: true, apifyProxyGroups: ['RESIDENTIAL'] },
         minDelay = 1,
-        maxDelay = 3
+        maxDelay = 3,
+        debugScreenshots = false
     } = input;
 
     // Handle maxResults: default 100, if 0 or blank = unlimited
@@ -43,6 +44,7 @@ await Actor.main(async () => {
     console.log(`🎯 Max results: ${isUnlimited ? 'Unlimited' : maxResults}`);
     console.log(`📄 Scrape details: ${scrapeDetails ? 'Yes' : 'No'}`);
     console.log(`🔒 Use Apify proxy: ${proxyConfig?.useApifyProxy ? 'Yes' : 'No'}`);
+    console.log(`📸 Debug screenshots: ${debugScreenshots ? 'Yes' : 'No'}`);
     if (proxyConfig?.useApifyProxy) {
         console.log(`   Proxy groups: ${proxyConfig.apifyProxyGroups?.join(', ') || 'AUTO'}`);
         if (proxyConfig.apifyProxyCountry) {
@@ -277,24 +279,9 @@ await Actor.main(async () => {
                 } catch (error) {
                     log.error(`Error processing search page: ${error.message}`);
                     
-                    // Capture screenshot for debugging
-                    try {
-                        const screenshotKey = `SCREENSHOT-error-${Date.now()}`;
-                        const screenshot = await page.screenshot({ fullPage: false, type: 'png' });
-                        await Actor.setValue(screenshotKey, Buffer.from(screenshot), { contentType: 'image/png' });
-                        log.info(`📸 Debug screenshot saved as ${screenshotKey}`);
-                        
-                        // Also log the page URL and any visible text
-                        const debugInfo = await page.evaluate(() => ({
-                            url: window.location.href,
-                            title: document.title,
-                            bodyText: document.body?.innerText?.substring(0, 1000) || '',
-                            hasConsent: !!document.querySelector('form[action*="consent"]'),
-                            hasCaptcha: document.body?.innerText?.includes('captcha') || document.body?.innerText?.includes('unusual traffic')
-                        }));
-                        log.info(`Debug info: ${JSON.stringify(debugInfo, null, 2)}`);
-                    } catch (screenshotError) {
-                        log.warning(`Could not capture debug screenshot: ${screenshotError.message}`);
+                    // Capture screenshot for debugging if enabled
+                    if (debugScreenshots) {
+                        await captureDebugScreenshot(page, Actor, log, 'error');
                     }
                     
                     throw error;
