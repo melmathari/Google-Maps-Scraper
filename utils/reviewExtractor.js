@@ -30,18 +30,44 @@ export async function extractReviewsFromListing(page, business, maxReviews, extr
             return [];
         }
         
-        // Click on the listing to open the sidebar
-        const clicked = await clickOnListing(page, business, log);
-        if (!clicked) {
-            log.warning(`Could not click on listing for: ${business.name}`);
-            return [];
+        // Click on the listing to open the sidebar (with retry)
+        let sidebarOpened = false;
+        
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            log.info(`🔄 Attempting to open business sidebar (attempt ${attempt}/3)...`);
+            
+            const clicked = await clickOnListing(page, business, log);
+            if (!clicked) {
+                log.warning(`Could not click on listing for: ${business.name}`);
+                if (attempt < 3) {
+                    await randomDelay(2000, 3000);
+                    continue;
+                }
+                return [];
+            }
+            
+            // Increased delay for cloud environments
+            await randomDelay(3000, 5000);
+            
+            // Wait for the sidebar to load and verify it opened
+            sidebarOpened = await waitForSidebar(page, business, log);
+            
+            if (sidebarOpened) {
+                break;
+            }
+            
+            // Sidebar didn't open, try pressing Escape and clicking again
+            if (attempt < 3) {
+                log.warning(`Sidebar didn't open, retrying...`);
+                await page.keyboard.press('Escape');
+                await randomDelay(2000, 3000);
+            }
         }
         
-        // Increased delay for cloud environments
-        await randomDelay(3000, 5000);
-        
-        // Wait for the sidebar to load
-        await waitForSidebar(page, log);
+        if (!sidebarOpened) {
+            log.warning(`❌ Could not open sidebar for: ${business.name} after 3 attempts`);
+            return [];
+        }
         
         // Click on Reviews tab to open reviews panel
         const reviewsOpened = await clickReviewsTab(page, log);
@@ -163,16 +189,44 @@ async function clickOnListing(page, business, log) {
 
 /**
  * Wait for the business sidebar to load
+ * Returns true if sidebar opened successfully, false otherwise
  */
-async function waitForSidebar(page, log) {
+async function waitForSidebar(page, business, log) {
     try {
+        // Wait for sidebar to appear - H1 should NOT be "Results"
+        // The H1 should be the business name when sidebar opens
+        log.info(`⏳ Waiting for business sidebar to open...`);
+        
         await page.waitForFunction(() => {
             const h1 = document.querySelector('h1');
+            const h1Text = h1?.textContent?.trim() || '';
+            // Sidebar is open when H1 exists and is NOT "Results" (search page)
+            // Also check for tabs which appear in business sidebar
             const tabs = document.querySelectorAll('[role="tab"]');
-            return h1 || tabs.length > 0;
-        }, { timeout: 15000 });
+            return (h1 && h1Text !== 'Results' && h1Text.length > 0) || tabs.length > 0;
+        }, { timeout: 20000 });
+        
+        // Verify the sidebar actually opened
+        const sidebarState = await page.evaluate(() => {
+            const h1 = document.querySelector('h1');
+            const tabs = document.querySelectorAll('[role="tab"]');
+            return {
+                h1Text: h1?.textContent?.trim() || '',
+                tabCount: tabs.length
+            };
+        });
+        
+        if (sidebarState.h1Text === 'Results' || sidebarState.h1Text === '') {
+            log.warning(`❌ Sidebar did not open properly. H1: "${sidebarState.h1Text}"`);
+            return false;
+        }
+        
+        log.info(`✓ Sidebar opened: "${sidebarState.h1Text.substring(0, 50)}..." (${sidebarState.tabCount} tabs)`);
+        return true;
+        
     } catch (error) {
-        log.warning(`Sidebar may not have loaded fully: ${error.message}`);
+        log.warning(`❌ Sidebar failed to open: ${error.message}`);
+        return false;
     }
 }
 
@@ -208,6 +262,12 @@ async function clickReviewsTab(page, log) {
         log.info(`📊 Page state - H1: "${pageState.h1}", Tabs: ${pageState.tabCount}, Buttons: ${pageState.buttonCount}`);
         if (pageState.tabs.length > 0) {
             log.info(`📊 Available tabs: ${JSON.stringify(pageState.tabs)}`);
+        }
+        
+        // GUARD: If H1 is "Results", we're still on search page - sidebar didn't open
+        if (pageState.h1 === 'Results' || pageState.h1 === '') {
+            log.warning(`❌ Cannot click Reviews tab - sidebar not open (H1: "${pageState.h1}")`);
+            return false;
         }
         
         try {
