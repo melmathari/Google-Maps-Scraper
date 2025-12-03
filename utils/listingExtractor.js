@@ -205,21 +205,65 @@ export async function extractBusinessListings(page, maxResults) {
                 }
 
                 // Extract website URL from Website button/link
+                // Google Maps has action buttons in various containers
+                // Note: Sponsored listings use google.com/aclk tracking URLs that redirect to the actual website
+                
+                // Helper to check if URL is a valid website (including Google ad tracking URLs)
+                function isValidWebsiteUrl(href) {
+                    if (!href) return false;
+                    // Allow Google ad click tracking URLs (they redirect to real websites)
+                    if (href.includes('google.com/aclk')) return true;
+                    // Block other Google/Maps URLs
+                    if (href.includes('google.com') || href.includes('/maps/')) return false;
+                    // Must be http/https
+                    return href.startsWith('http://') || href.startsWith('https://') || href.startsWith('//');
+                }
+                
                 // Method 1: Direct selector for common patterns
                 const websiteBtn = article.querySelector('a[data-value="Website"], a[aria-label*="Website"], a[data-tooltip*="website" i]');
                 if (websiteBtn) {
                     const href = websiteBtn.href || websiteBtn.getAttribute('href');
-                    if (href && !href.includes('google.com') && !href.includes('/maps/') && (href.startsWith('http') || href.startsWith('//'))) {
+                    if (isValidWebsiteUrl(href)) {
                         website = href.startsWith('//') ? 'https:' + href : href;
                     }
                 }
                 
-                // Method 2: Look through all links for website indicators
+                // Method 2: Look for action buttons container and find external links
+                // Action buttons are often in a container with multiple <a> or <button> elements
+                if (!website) {
+                    // Find all link containers (divs that contain multiple action links)
+                    const actionContainers = article.querySelectorAll('div');
+                    for (const container of actionContainers) {
+                        const links = container.querySelectorAll('a[href]');
+                        // Action button containers typically have 2-5 links (Directions, Website, Call, etc.)
+                        if (links.length >= 2 && links.length <= 6) {
+                            for (const a of links) {
+                                const href = a.href || a.getAttribute('href');
+                                if (!href || href.startsWith('javascript:') || href === '#') continue;
+                                
+                                // Check if it's a valid website URL
+                                if (isValidWebsiteUrl(href)) {
+                                    // Skip social media links (but allow aclk tracking URLs)
+                                    if (!href.includes('google.com/aclk') && 
+                                        (href.includes('facebook.com') || href.includes('instagram.com') || 
+                                         href.includes('twitter.com') || href.includes('youtube.com') ||
+                                         href.includes('linkedin.com'))) continue;
+                                    
+                                    website = href.startsWith('//') ? 'https:' + href : href;
+                                    break;
+                                }
+                            }
+                            if (website) break;
+                        }
+                    }
+                }
+                
+                // Method 3: Look through all links for website indicators in attributes
                 if (!website) {
                     const allLinks = article.querySelectorAll('a[href]');
                     for (const a of allLinks) {
                         const href = a.href || a.getAttribute('href');
-                        if (!href || href.includes('google.com') || href.includes('/maps/')) continue;
+                        if (!isValidWebsiteUrl(href)) continue;
                         
                         const ariaLabel = (a.getAttribute('aria-label') || '').toLowerCase();
                         const dataValue = (a.getAttribute('data-value') || '').toLowerCase();
@@ -231,39 +275,49 @@ export async function extractBusinessListings(page, maxResults) {
                             dataValue === 'website' || 
                             dataTooltip.includes('website') ||
                             title.includes('website')) {
-                            website = href;
+                            website = href.startsWith('//') ? 'https:' + href : href;
                             break;
                         }
                     }
                 }
                 
-                // Method 3: Look for external links that are not Google/Maps related
-                // These are typically the business website in listing cards
+                // Method 4: Find any external link that looks like a business website
                 if (!website) {
                     const allLinks = article.querySelectorAll('a[href]');
+                    const externalLinks = [];
+                    
                     for (const a of allLinks) {
                         const href = a.href || a.getAttribute('href');
-                        if (!href) continue;
+                        if (!href || href.startsWith('javascript:') || href === '#') continue;
                         
-                        // Skip Google and Maps URLs
-                        if (href.includes('google.com') || href.includes('/maps/')) continue;
-                        
-                        // Skip javascript: and # links
-                        if (href.startsWith('javascript:') || href === '#') continue;
-                        
-                        // Check if it's a valid external URL
-                        if (href.startsWith('http://') || href.startsWith('https://') || href.startsWith('//')) {
-                            // Additional check: the parent or link itself often has "Website" text
-                            const parentText = a.parentElement?.textContent?.toLowerCase() || '';
-                            const linkText = a.textContent?.toLowerCase() || '';
+                        // Check if it's a valid website URL
+                        if (isValidWebsiteUrl(href)) {
+                            // Skip social media (but allow aclk tracking URLs)
+                            if (!href.includes('google.com/aclk') &&
+                                (href.includes('facebook.com') || href.includes('instagram.com') || 
+                                 href.includes('twitter.com') || href.includes('youtube.com') ||
+                                 href.includes('linkedin.com') || href.includes('tiktok.com'))) continue;
                             
-                            // If link text or nearby text says "website", or it's clearly an external business site
-                            if (linkText.includes('website') || parentText.includes('website') || 
-                                (!href.includes('facebook.com') && !href.includes('instagram.com') && 
-                                 !href.includes('twitter.com') && !href.includes('youtube.com'))) {
-                                website = href.startsWith('//') ? 'https:' + href : href;
+                            externalLinks.push(href.startsWith('//') ? 'https:' + href : href);
+                        }
+                    }
+                    
+                    // If we found exactly one external link, it's likely the website
+                    if (externalLinks.length === 1) {
+                        website = externalLinks[0];
+                    } else if (externalLinks.length > 1) {
+                        // Multiple external links - prefer direct URLs over tracking URLs
+                        // First try to find a non-tracking URL
+                        for (const href of externalLinks) {
+                            if (!href.includes('google.com/aclk') && !href.includes('redirect') && 
+                                !href.includes('track') && !href.includes('click')) {
+                                website = href;
                                 break;
                             }
+                        }
+                        // If no direct URL found, accept tracking URLs
+                        if (!website && externalLinks.length > 0) {
+                            website = externalLinks[0];
                         }
                     }
                 }
