@@ -388,7 +388,7 @@ async function extractShareLinksForReviews(page, reviews, log) {
         const review = reviews[i];
         try {
             // Click the share button for this review
-            const shareUrl = await page.evaluate(async (reviewerName) => {
+            const clicked = await page.evaluate((reviewerName) => {
                 // Find the share button for this reviewer
                 const shareButtons = document.querySelectorAll('button[aria-label*="Share"][aria-label*="review"]');
                 for (const btn of shareButtons) {
@@ -401,7 +401,7 @@ async function extractShareLinksForReviews(page, reviews, log) {
                 return false;
             }, review.reviewerName);
             
-            if (!shareUrl) continue;
+            if (!clicked) continue;
             
             await randomDelay(1500, 2500);
             
@@ -423,19 +423,64 @@ async function extractShareLinksForReviews(page, reviews, log) {
                 log.info(`  ✓ Got share link for ${review.reviewerName}`);
             }
             
-            // Close the share dialog
-            await page.evaluate(() => {
-                const closeBtn = document.querySelector('button[aria-label="Close"]');
-                if (closeBtn) {
-                    closeBtn.click();
-                }
-            });
-            
+            // Close the share dialog - try multiple methods
+            await closeShareDialog(page);
             await randomDelay(500, 1000);
             
         } catch (error) {
             log.warning(`  ✗ Failed to get share link for ${review.reviewerName}`);
+            // Try to close dialog even on error
+            try {
+                await closeShareDialog(page);
+            } catch (e) {
+                // Ignore
+            }
         }
+    }
+}
+
+/**
+ * Close the share dialog using multiple methods
+ * @param {Object} page - Puppeteer page
+ */
+async function closeShareDialog(page) {
+    // Method 1: Click the Close button
+    const closed = await page.evaluate(() => {
+        // Try various close button selectors
+        const closeSelectors = [
+            'button[aria-label="Close"]',
+            'button[aria-label="close"]',
+            '[role="dialog"] button[aria-label*="Close"]',
+            '[role="dialog"] button[aria-label*="close"]'
+        ];
+        
+        for (const selector of closeSelectors) {
+            const btn = document.querySelector(selector);
+            if (btn) {
+                btn.click();
+                return true;
+            }
+        }
+        return false;
+    });
+    
+    if (!closed) {
+        // Method 2: Press Escape key
+        await page.keyboard.press('Escape');
+    }
+    
+    await randomDelay(300, 500);
+    
+    // Verify dialog is closed
+    const dialogStillOpen = await page.evaluate(() => {
+        const dialog = document.querySelector('[role="dialog"]');
+        return dialog && dialog.offsetParent !== null;
+    });
+    
+    if (dialogStillOpen) {
+        // Method 3: Click outside the dialog
+        await page.mouse.click(10, 10);
+        await randomDelay(300, 500);
     }
 }
 
@@ -446,35 +491,76 @@ async function extractShareLinksForReviews(page, reviews, log) {
  */
 async function closeSidebar(page, log) {
     try {
-        // Try clicking the back button or close button
-        await page.evaluate(() => {
-            // Look for back arrow button
-            const backBtn = document.querySelector('button[aria-label="Back"], button[aria-label*="back"]');
-            if (backBtn) {
-                backBtn.click();
-                return true;
-            }
+        // First, make sure any share dialog is closed
+        await closeShareDialog(page);
+        
+        // Method 1: Click the back button (usually an arrow at the top left)
+        let closed = await page.evaluate(() => {
+            // Various back button selectors
+            const backSelectors = [
+                'button[aria-label="Back"]',
+                'button[aria-label="back"]', 
+                'button[jsaction*="back"]',
+                '[data-value="Back"]',
+                '.section-back-to-list-button'
+            ];
             
-            // Look for close button
-            const closeBtn = document.querySelector('button[aria-label="Close"]');
-            if (closeBtn) {
-                closeBtn.click();
-                return true;
+            for (const selector of backSelectors) {
+                const btn = document.querySelector(selector);
+                if (btn) {
+                    btn.click();
+                    return true;
+                }
             }
-            
             return false;
         });
         
-        await randomDelay(1000, 2000);
+        if (closed) {
+            await randomDelay(1500, 2500);
+            return;
+        }
         
-        // If still in detail view, try pressing Escape
+        // Method 2: Press Escape to close the sidebar
+        await page.keyboard.press('Escape');
+        await randomDelay(1000, 1500);
+        
+        // Method 3: If still showing detail, try clicking on the search results area
         const stillInDetail = await page.evaluate(() => {
-            return !!document.querySelector('h1');
+            // Check if we're still in the detail view (has h1 with business name)
+            const h1 = document.querySelector('h1');
+            const feed = document.querySelector('[role="feed"]');
+            return h1 && !feed;
         });
         
         if (stillInDetail) {
+            // Press Escape again
             await page.keyboard.press('Escape');
             await randomDelay(1000, 1500);
+            
+            // Try clicking back button again with more specific selector
+            await page.evaluate(() => {
+                const buttons = document.querySelectorAll('button');
+                for (const btn of buttons) {
+                    const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
+                    if (ariaLabel.includes('back') || ariaLabel.includes('close')) {
+                        btn.click();
+                        return true;
+                    }
+                }
+                return false;
+            });
+            await randomDelay(1000, 1500);
+        }
+        
+        // Verify we're back to listings
+        const backToListings = await page.evaluate(() => {
+            const feed = document.querySelector('[role="feed"]');
+            const articles = document.querySelectorAll('div[role="article"]');
+            return feed || articles.length > 0;
+        });
+        
+        if (!backToListings) {
+            log.warning('May not have returned to listings view properly');
         }
         
     } catch (error) {

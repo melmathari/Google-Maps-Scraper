@@ -354,9 +354,10 @@ await Actor.main(async () => {
                                         website: business.website || null,
                                         hoursStatus: business.hoursStatus || null,
                                         isSponsored: Boolean(business.isSponsored),
-                                        scrapedAt: business.scrapedAt || new Date().toISOString(),
-                                        reviews: reviews
+                                        scrapedAt: new Date().toISOString(),
+                                        reviews: reviews || []
                                     };
+                                    log.info(`💾 Saving: ${cleanBusiness.name} with ${cleanBusiness.reviews.length} reviews`);
                                     await Dataset.pushData(cleanBusiness);
                                 }
                             }
