@@ -237,78 +237,24 @@ async function clickReviewsTab(page, log) {
 async function extractReviewsFromPage(page, maxReviews, log) {
     const reviews = await page.evaluate((max) => {
         const results = [];
-        const processedElements = new Set();
+        const processedReviewIds = new Set();
         
-        // Method 1: Try to find reviews using data-review-id (most reliable when present)
-        const reviewsWithIds = document.querySelectorAll('[data-review-id]');
+        // Simple approach: Find all reviews by data-review-id and extract them in order
+        // This is the only reliable selector - no fallback methods needed
+        const reviewContainers = document.querySelectorAll('[data-review-id]');
         
-        for (const container of reviewsWithIds) {
+        for (const container of reviewContainers) {
             if (results.length >= max) break;
             
             const reviewId = container.getAttribute('data-review-id');
-            if (processedElements.has(reviewId)) continue;
-            processedElements.add(reviewId);
+            
+            // Skip if already processed (shouldn't happen, but just in case)
+            if (processedReviewIds.has(reviewId)) continue;
+            processedReviewIds.add(reviewId);
             
             const reviewData = extractDataFromContainer(container, results.length);
             if (reviewData && reviewData.rating >= 1 && reviewData.rating <= 5) {
                 results.push(reviewData);
-            }
-        }
-        
-        // Method 2: If not enough reviews found, try using jftiEf class (common review container class)
-        if (results.length < max) {
-            const jftiefContainers = document.querySelectorAll('.jftiEf');
-            for (const container of jftiefContainers) {
-                if (results.length >= max) break;
-                
-                // Skip if already processed
-                const existingId = container.getAttribute('data-review-id');
-                if (existingId && processedElements.has(existingId)) continue;
-                
-                // Use element reference as key
-                if (processedElements.has(container)) continue;
-                processedElements.add(container);
-                
-                const reviewData = extractDataFromContainer(container, results.length);
-                if (reviewData && reviewData.rating >= 1 && reviewData.rating <= 5) {
-                    results.push(reviewData);
-                }
-            }
-        }
-        
-        // Method 3: Find via star ratings (fallback)
-        if (results.length < max) {
-            const starElements = document.querySelectorAll('span[role="img"][aria-label*="star"]');
-            
-            for (const starEl of starElements) {
-                if (results.length >= max) break;
-                
-                // Find review container by going up from star rating
-                let container = starEl.parentElement;
-                for (let i = 0; i < 10 && container; i++) {
-                    // Look for a reasonable container size
-                    if (container.offsetHeight > 60 && container.offsetWidth > 200) {
-                        // Check if this container has review-like content
-                        const hasReviewContent = container.querySelector('button[aria-label^="Photo of"]') ||
-                                                container.querySelector('a[href*="/contrib/"]') ||
-                                                container.innerText?.length > 20;
-                        if (hasReviewContent) break;
-                    }
-                    container = container.parentElement;
-                }
-                
-                if (!container || processedElements.has(container)) continue;
-                
-                // Check if this container was already processed by ID
-                const existingId = container.getAttribute('data-review-id');
-                if (existingId && processedElements.has(existingId)) continue;
-                
-                processedElements.add(container);
-                
-                const reviewData = extractDataFromContainer(container, results.length);
-                if (reviewData && reviewData.rating >= 1 && reviewData.rating <= 5) {
-                    results.push(reviewData);
-                }
             }
         }
         
@@ -406,7 +352,7 @@ async function extractReviewsFromPage(page, maxReviews, log) {
                 let reviewDate = null;
                 const containerText = container.innerText || '';
                 
-                // Look for date patterns
+                // Look for date patterns - these are essential for reviews
                 const datePatterns = [
                     /(\d+\s*(year|month|week|day|hour|minute)s?\s*ago)/i,
                     /((a|an)\s+(year|month|week|day|hour|minute)\s*ago)/i,
@@ -416,6 +362,27 @@ async function extractReviewsFromPage(page, maxReviews, log) {
                     if (match) {
                         reviewDate = match[0].trim();
                         break;
+                    }
+                }
+                
+                // Additional validation: Real reviews should have a date
+                // Business listings won't have "X ago" dates
+                // Check if this looks like a business listing based on subtitle content
+                if (!reviewDate && reviewerSubtitle) {
+                    // Business listing patterns: addresses, phone numbers, hours
+                    const businessSubtitlePatterns = [
+                        /\b(Open|Closes)\s*[·\d]/i,
+                        /\d{2,3}\s+\d{3,4}\s+\d{4}/,  // Phone pattern
+                        /\+\d{1,3}\s+\d{2,3}/,  // Intl phone
+                        /·\s*\d+\s*[-–]\s*\d+\s/,  // Address numbers
+                        /service\s*·/i,
+                    ];
+                    
+                    for (const pattern of businessSubtitlePatterns) {
+                        if (pattern.test(reviewerSubtitle)) {
+                            // This is likely a business listing, not a review
+                            return null;
+                        }
                     }
                 }
                 
