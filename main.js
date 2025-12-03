@@ -137,6 +137,137 @@ async function extractBusinessListings(page, maxResults) {
         const results = [];
         const seenUrls = new Set();
 
+        // Helper function to check if text looks like a category
+        function isCategory(text) {
+            if (!text || text.length < 3 || text.length > 60) return false;
+            
+            // Skip specific non-category patterns
+            const skipPatterns = [
+                /^sponsored$/i,
+                /^\d/,                          // Starts with number
+                /^\(/,                          // Starts with parenthesis
+                /^open/i,                       // Open status
+                /^closed/i,                     // Closed status
+                /^opens/i,                      // Opens at
+                /^closes/i,                     // Closes at
+                /^\$+$/,                        // Price level
+                /^website$/i,
+                /^directions$/i,
+                /^reviews?$/i,
+                /^\d+\s*reviews?/i,
+                /^share$/i,
+                /^save$/i,
+                /^more info$/i,
+            ];
+            
+            for (const pattern of skipPatterns) {
+                if (pattern.test(text)) return false;
+            }
+            
+            // Category patterns - common business types
+            const categoryPatterns = [
+                /service/i,
+                /cleaning/i,
+                /restaurant/i,
+                /cafe/i,
+                /shop/i,
+                /store/i,
+                /salon/i,
+                /hotel/i,
+                /bar$/i,
+                /club/i,
+                /gym/i,
+                /spa$/i,
+                /clinic/i,
+                /hospital/i,
+                /school/i,
+                /bank/i,
+                /agency/i,
+                /office/i,
+                /center/i,
+                /centre/i,
+                /company/i,
+                /contractor/i,
+                /plumber/i,
+                /electrician/i,
+                /mechanic/i,
+                /repair/i,
+                /rental/i,
+                /dealer/i,
+                /supplier/i,
+                /market/i,
+                /bakery/i,
+                /pharmacy/i,
+                /dentist/i,
+                /doctor/i,
+                /lawyer/i,
+                /attorney/i,
+                /accountant/i,
+                /consultant/i,
+                /cleaners/i,
+            ];
+            
+            for (const pattern of categoryPatterns) {
+                if (pattern.test(text)) return true;
+            }
+            
+            // Also accept capitalized multi-word phrases that look like categories
+            if (/^[A-Z][a-z]+(\s+[a-z]+)*$/.test(text) && text.split(' ').length <= 4) {
+                return true;
+            }
+            
+            return false;
+        }
+
+        // Helper function to check if text looks like an address
+        function isAddress(text) {
+            if (!text || text.length < 5 || text.length > 150) return false;
+            
+            // Address patterns - contains street number, street name, or city indicators
+            const addressPatterns = [
+                /^\d+\s+[A-Za-z]/,              // Starts with number followed by letter (street address)
+                /\d+[A-Za-z]?\s+[A-Za-z]/,      // Number with optional letter then street name
+                /straat/i,                       // Dutch: street
+                /weg$/i,                         // Dutch: way/road
+                /laan$/i,                        // Dutch: lane
+                /plein/i,                        // Dutch: square
+                /gracht/i,                       // Dutch: canal
+                /kade/i,                         // Dutch: quay
+                /street/i,
+                /road/i,
+                /avenue/i,
+                /drive/i,
+                /boulevard/i,
+                /lane/i,
+                /place/i,
+                /court/i,
+                /square/i,
+                /,\s*[A-Z][a-z]+/,              // Comma followed by city name
+            ];
+            
+            for (const pattern of addressPatterns) {
+                if (pattern.test(text)) return true;
+            }
+            
+            return false;
+        }
+
+        // Helper function to check if text looks like a phone number
+        function isPhoneNumber(text) {
+            if (!text) return false;
+            // Clean up the text
+            const cleaned = text.replace(/[\s\-\.\(\)]/g, '');
+            // Check if it's mostly digits (at least 7 digits for a valid phone)
+            const digitCount = (cleaned.match(/\d/g) || []).length;
+            return digitCount >= 7 && digitCount <= 15 && /^[\d\+\-\.\s\(\)]+$/.test(text.trim());
+        }
+
+        // Helper function to check if text is hours status
+        function isHoursStatus(text) {
+            if (!text) return false;
+            return /^(open|closed|opens|closes)/i.test(text.trim());
+        }
+
         // Method 1: Find article elements (search result cards)
         const articles = document.querySelectorAll('div[role="article"]');
         
@@ -166,17 +297,31 @@ async function extractBusinessListings(page, maxResults) {
                     name = 'Unknown Business';
                 }
 
-                // Extract rating and review count from text content
+                // Initialize data fields
                 let rating = null;
                 let reviewCount = null;
-                
-                // Look for rating pattern like "4.8" or "4.8(119)"
+                let category = null;
+                let address = null;
+                let phone = null;
+                let website = null;
+                let hoursStatus = null;
+                let isSponsored = false;
+
+                // Get all text content for analysis
                 const textContent = article.textContent || '';
+                
+                // Check if this is a sponsored result
+                if (textContent.toLowerCase().includes('sponsored')) {
+                    isSponsored = true;
+                }
                 
                 // Match rating pattern: number followed by stars or parentheses
                 const ratingMatch = textContent.match(/(\d+\.?\d*)\s*(?:stars?|\()/i);
                 if (ratingMatch) {
-                    rating = parseFloat(ratingMatch[1]);
+                    const ratingValue = parseFloat(ratingMatch[1]);
+                    if (ratingValue >= 1 && ratingValue <= 5) {
+                        rating = ratingValue;
+                    }
                 }
                 
                 // Match review count in parentheses: (119) or (1,234)
@@ -185,24 +330,127 @@ async function extractBusinessListings(page, maxResults) {
                     reviewCount = parseInt(reviewMatch[1].replace(/,/g, ''));
                 }
 
-                // Extract category - usually after the rating info
-                let category = null;
+                // Extract website URL from Website button/link
+                const websiteBtn = article.querySelector('a[data-value="Website"], a[aria-label*="Website"], a[href]:not([href*="google.com"]):not([href*="/maps/"])');
+                if (websiteBtn) {
+                    const href = websiteBtn.getAttribute('href');
+                    if (href && !href.includes('google.com') && !href.includes('/maps/') && (href.startsWith('http') || href.startsWith('//'))) {
+                        website = href.startsWith('//') ? 'https:' + href : href;
+                    }
+                }
+                
+                // Also look for website in data attributes
+                if (!website) {
+                    const allLinks = article.querySelectorAll('a[href]');
+                    for (const a of allLinks) {
+                        const href = a.href || a.getAttribute('href');
+                        const ariaLabel = a.getAttribute('aria-label') || '';
+                        const dataValue = a.getAttribute('data-value') || '';
+                        
+                        if ((ariaLabel.toLowerCase().includes('website') || dataValue.toLowerCase() === 'website') 
+                            && href && !href.includes('google.com') && !href.includes('/maps/')) {
+                            website = href;
+                            break;
+                        }
+                    }
+                }
+
+                // Extract structured data from child elements
+                // Google Maps organizes data in nested divs/spans
+                const allElements = article.querySelectorAll('span, div');
+                const textParts = [];
+                
+                for (const el of allElements) {
+                    // Only get direct text content (not nested)
+                    const directText = Array.from(el.childNodes)
+                        .filter(node => node.nodeType === Node.TEXT_NODE)
+                        .map(node => node.textContent.trim())
+                        .join(' ')
+                        .trim();
+                    
+                    if (directText && directText.length > 0) {
+                        textParts.push(directText);
+                    }
+                }
+
+                // Also get text from spans with specific content
                 const spans = article.querySelectorAll('span');
                 for (const span of spans) {
                     const text = span.textContent?.trim();
-                    // Category is usually a short text without numbers or special chars
-                    if (text && 
-                        text.length > 3 && 
-                        text.length < 50 && 
-                        !text.match(/^\d/) && 
-                        !text.includes('(') &&
-                        !text.includes('·') &&
-                        !text.includes('Open') &&
-                        !text.includes('Closed') &&
-                        !text.includes('$')) {
-                        // Check if it looks like a category (capitalize words)
-                        if (text.match(/^[A-Z][a-z]/) || text.includes('service') || text.includes('cleaning')) {
-                            category = text;
+                    if (!text) continue;
+                    
+                    // Skip if it's just the name or rating/review
+                    if (text === name) continue;
+                    if (/^\d+\.?\d*$/.test(text)) continue;  // Just a number
+                    if (/^\(\d+[,\d]*\)$/.test(text)) continue;  // Just (123)
+                    
+                    // Check for category (skip "Sponsored")
+                    if (!category && isCategory(text) && text.toLowerCase() !== 'sponsored') {
+                        category = text;
+                        continue;
+                    }
+                    
+                    // Check for address
+                    if (!address && isAddress(text)) {
+                        address = text;
+                        continue;
+                    }
+                    
+                    // Check for phone number
+                    if (!phone && isPhoneNumber(text)) {
+                        phone = text.trim();
+                        continue;
+                    }
+                    
+                    // Check for hours status
+                    if (!hoursStatus && isHoursStatus(text)) {
+                        hoursStatus = text.trim();
+                        continue;
+                    }
+                }
+
+                // Secondary extraction: look for patterns in aria-labels
+                const buttons = article.querySelectorAll('button[aria-label], a[aria-label]');
+                for (const btn of buttons) {
+                    const label = btn.getAttribute('aria-label') || '';
+                    
+                    // Extract phone from aria-label
+                    if (!phone && label.toLowerCase().includes('phone')) {
+                        const phoneMatch = label.match(/phone[:\s]*([+\d\s\-\.\(\)]+)/i);
+                        if (phoneMatch) {
+                            phone = phoneMatch[1].trim();
+                        }
+                    }
+                    
+                    // Extract hours from aria-label
+                    if (!hoursStatus && (label.includes('Open') || label.includes('Closed') || label.includes('Opens') || label.includes('Closes'))) {
+                        hoursStatus = label;
+                    }
+                }
+
+                // Try to extract address from concatenated text if not found
+                if (!address) {
+                    // Look for address patterns in the full text
+                    // Common pattern: after category, before hours/phone
+                    const addressMatch = textContent.match(/·\s*(\d+[^·]*(?:straat|weg|laan|street|road|avenue|drive|boulevard)[^·]*)/i);
+                    if (addressMatch) {
+                        address = addressMatch[1].trim();
+                    }
+                }
+
+                // Extract phone from full text if not found
+                if (!phone) {
+                    // Dutch phone patterns: 020 xxx xxxx, +31 xx xxx xxxx, etc.
+                    const phonePatterns = [
+                        /(\+?\d{1,3}[\s\-]?\d{2,4}[\s\-]?\d{3}[\s\-]?\d{2,4})/,
+                        /(0\d{2}[\s\-]?\d{3}[\s\-]?\d{4})/,
+                        /(\d{3}[\s\-]?\d{3}[\s\-]?\d{4})/,
+                    ];
+                    
+                    for (const pattern of phonePatterns) {
+                        const match = textContent.match(pattern);
+                        if (match && match[1].replace(/[\s\-]/g, '').length >= 9) {
+                            phone = match[1].trim();
                             break;
                         }
                     }
@@ -214,7 +462,11 @@ async function extractBusinessListings(page, maxResults) {
                     rating: rating,
                     reviewCount: reviewCount,
                     category: category,
-                    addressSnippet: null,
+                    address: address,
+                    phone: phone,
+                    website: website,
+                    hoursStatus: hoursStatus,
+                    isSponsored: isSponsored,
                     scrapedAt: new Date().toISOString()
                 });
             } catch (error) {
@@ -249,7 +501,11 @@ async function extractBusinessListings(page, maxResults) {
                         rating: null,
                         reviewCount: null,
                         category: null,
-                        addressSnippet: null,
+                        address: null,
+                        phone: null,
+                        website: null,
+                        hoursStatus: null,
+                        isSponsored: false,
                         scrapedAt: new Date().toISOString()
                     });
                 } catch (error) {

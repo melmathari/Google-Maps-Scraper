@@ -58,6 +58,10 @@
                 "type": "string",
                 "format": "date-time",
                 "description": "Timestamp when the data was scraped"
+            },
+            "isSponsored": {
+                "type": "boolean",
+                "description": "Whether this is a sponsored/ad listing"
             }
         },
         "required": ["name", "url", "scrapedAt"]
@@ -74,6 +78,8 @@
                     "address",
                     "phone",
                     "website",
+                    "hoursStatus",
+                    "isSponsored",
                     "url"
                 ]
             },
@@ -108,6 +114,14 @@
                         "label": "Website",
                         "format": "link"
                     },
+                    "hoursStatus": {
+                        "label": "Hours",
+                        "format": "text"
+                    },
+                    "isSponsored": {
+                        "label": "Sponsored",
+                        "format": "boolean"
+                    },
                     "url": {
                         "label": "Google Maps URL",
                         "format": "link"
@@ -129,6 +143,7 @@
                     "hoursStatus",
                     "priceLevel",
                     "plusCode",
+                    "isSponsored",
                     "url",
                     "scrapedAt"
                 ]
@@ -175,6 +190,10 @@
                     "plusCode": {
                         "label": "Plus Code",
                         "format": "text"
+                    },
+                    "isSponsored": {
+                        "label": "Sponsored",
+                        "format": "boolean"
                     },
                     "url": {
                         "label": "Google Maps URL",
