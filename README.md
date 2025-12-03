@@ -58,6 +58,16 @@ This tool searches Google Maps for businesses matching your criteria and extract
 | `proxyConfiguration` | object | No | Residential | Proxy settings |
 | `minDelay` | integer | No | 1 | Min seconds between requests |
 | `maxDelay` | integer | No | 3 | Max seconds between requests |
+| `debugScreenshots` | boolean | No | false | Capture screenshots on errors for debugging |
+
+### Filtering Options
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `skipSponsored` | boolean | false | Skip all sponsored/ad listings, only return organic results |
+| `skipWithWebsite` | boolean | false | Only return listings WITHOUT a website (for lead generation) |
+| `skipWithPhone` | boolean | false | Only return listings WITHOUT a phone number |
+| `skipWithoutContact` | boolean | false | Skip listings that have neither phone nor email |
 
 ## Usage Examples
 
@@ -107,6 +117,19 @@ This tool searches Google Maps for businesses matching your criteria and extract
 }
 ```
 
+### Lead Generation (Businesses Without Websites)
+
+```json
+{
+  "searchQuery": "cleaning services",
+  "location": "Amsterdam, Netherlands",
+  "maxResults": 50,
+  "skipSponsored": true,
+  "skipWithWebsite": true,
+  "skipWithoutContact": true
+}
+```
+
 ## Practical Applications
 
 **Lead Generation**
@@ -152,8 +175,9 @@ npm start
 - `scrapeDetails: false` — Fast extraction, basic data only
 - `scrapeDetails: true` — Slower but gets phone, website, full address
 
-**Avoiding Blocks**
-- Always use residential proxies (default setting)
+**Proxy Options**
+- **Datacenter proxies** — Cheapest option, works well for most searches
+- **Residential proxies** — More reliable for large-scale extraction, recommended if you experience blocks
 - Keep delays at 1-3 seconds (default)
 - Start with smaller batches to test
 
@@ -217,7 +241,9 @@ npm start
 └── README.md               
 ```
 
-## Legal Notice
+## Disclaimer
+
+**This project is not affiliated with, endorsed by, or sponsored by Google.** Google Maps is a trademark of Google LLC.
 
 This tool extracts publicly available information from Google Maps. Users are responsible for:
 - Complying with Google's Terms of Service
