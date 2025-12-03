@@ -531,6 +531,18 @@ async function extractReviewsFromPage(page, maxReviews, log) {
                     }
                 }
                 
+                // Clean up subtitle: Remove reviewer name if it got concatenated
+                if (reviewerSubtitle && reviewerName && reviewerName !== 'Unknown') {
+                    // Remove name from start of subtitle (e.g., "JohnLocal Guide" -> "Local Guide")
+                    if (reviewerSubtitle.startsWith(reviewerName)) {
+                        reviewerSubtitle = reviewerSubtitle.substring(reviewerName.length).trim();
+                    }
+                    // Also check for name at end (less common but possible)
+                    if (reviewerSubtitle.endsWith(reviewerName)) {
+                        reviewerSubtitle = reviewerSubtitle.substring(0, reviewerSubtitle.length - reviewerName.length).trim();
+                    }
+                }
+                
                 // === REVIEW DATE ===
                 let reviewDate = null;
                 const containerText = container.innerText || '';
