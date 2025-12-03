@@ -231,142 +231,266 @@ async function clickReviewsTab(page, log) {
 
 
 /**
- * Extract reviews from the current page using Google Maps CSS classes
- * Uses star ratings to find review containers (same method as counting)
+ * Extract reviews from the current page using robust structural selectors
+ * Avoids brittle CSS class names that Google changes frequently
  */
 async function extractReviewsFromPage(page, maxReviews, log) {
     const reviews = await page.evaluate((max) => {
         const results = [];
-        const processedContainers = new Set();
+        const processedElements = new Set();
         
-        // Find all star rating elements - same approach as countReviews()
-        const starElements = document.querySelectorAll('span[role="img"][aria-label*="star"]');
+        // Method 1: Try to find reviews using data-review-id (most reliable when present)
+        const reviewsWithIds = document.querySelectorAll('[data-review-id]');
         
-        for (const starEl of starElements) {
+        for (const container of reviewsWithIds) {
             if (results.length >= max) break;
             
-            try {
-                // Find the review container by going up from the star rating
-                // Same logic as countReviews() - go up 8 levels max looking for container
+            const reviewId = container.getAttribute('data-review-id');
+            if (processedElements.has(reviewId)) continue;
+            processedElements.add(reviewId);
+            
+            const reviewData = extractDataFromContainer(container, results.length);
+            if (reviewData && reviewData.rating >= 1 && reviewData.rating <= 5) {
+                results.push(reviewData);
+            }
+        }
+        
+        // Method 2: If not enough reviews found, try using jftiEf class (common review container class)
+        if (results.length < max) {
+            const jftiefContainers = document.querySelectorAll('.jftiEf');
+            for (const container of jftiefContainers) {
+                if (results.length >= max) break;
+                
+                // Skip if already processed
+                const existingId = container.getAttribute('data-review-id');
+                if (existingId && processedElements.has(existingId)) continue;
+                
+                // Use element reference as key
+                if (processedElements.has(container)) continue;
+                processedElements.add(container);
+                
+                const reviewData = extractDataFromContainer(container, results.length);
+                if (reviewData && reviewData.rating >= 1 && reviewData.rating <= 5) {
+                    results.push(reviewData);
+                }
+            }
+        }
+        
+        // Method 3: Find via star ratings (fallback)
+        if (results.length < max) {
+            const starElements = document.querySelectorAll('span[role="img"][aria-label*="star"]');
+            
+            for (const starEl of starElements) {
+                if (results.length >= max) break;
+                
+                // Find review container by going up from star rating
                 let container = starEl.parentElement;
-                for (let i = 0; i < 8 && container; i++) {
-                    if (container.offsetHeight > 80 && container.offsetHeight < 500) {
-                        break;
+                for (let i = 0; i < 10 && container; i++) {
+                    // Look for a reasonable container size
+                    if (container.offsetHeight > 60 && container.offsetWidth > 200) {
+                        // Check if this container has review-like content
+                        const hasReviewContent = container.querySelector('button[aria-label^="Photo of"]') ||
+                                                container.querySelector('a[href*="/contrib/"]') ||
+                                                container.innerText?.length > 20;
+                        if (hasReviewContent) break;
                     }
                     container = container.parentElement;
                 }
                 
-                if (!container || processedContainers.has(container)) continue;
-                processedContainers.add(container);
+                if (!container || processedElements.has(container)) continue;
                 
+                // Check if this container was already processed by ID
+                const existingId = container.getAttribute('data-review-id');
+                if (existingId && processedElements.has(existingId)) continue;
+                
+                processedElements.add(container);
+                
+                const reviewData = extractDataFromContainer(container, results.length);
+                if (reviewData && reviewData.rating >= 1 && reviewData.rating <= 5) {
+                    results.push(reviewData);
+                }
+            }
+        }
+        
+        return results;
+        
+        // Helper function to extract data from a review container
+        function extractDataFromContainer(container, index) {
+            try {
                 // === STAR RATING ===
                 let rating = null;
-                const ratingMatch = starEl.getAttribute('aria-label')?.match(/(\d+)\s*star/i);
-                if (ratingMatch) {
-                    rating = parseInt(ratingMatch[1]);
+                const starEl = container.querySelector('span[role="img"][aria-label*="star"]');
+                if (starEl) {
+                    const ratingMatch = starEl.getAttribute('aria-label')?.match(/(\d+)\s*star/i);
+                    if (ratingMatch) {
+                        rating = parseInt(ratingMatch[1]);
+                    }
                 }
                 
-                // Skip if rating is not 1-5 (not a review star)
-                if (rating === null || rating < 1 || rating > 5) continue;
+                // Skip if no valid rating found
+                if (rating === null || rating < 1 || rating > 5) return null;
                 
                 // === REVIEWER NAME ===
-                // Google uses .d4r55 class for reviewer names
                 let reviewerName = null;
-                const nameEl = container.querySelector('.d4r55');
-                if (nameEl) {
-                    reviewerName = nameEl.textContent?.trim();
+                
+                // Try 1: Button with "Photo of X" aria-label (very reliable)
+                const photoBtn = container.querySelector('button[aria-label^="Photo of"]');
+                if (photoBtn) {
+                    const label = photoBtn.getAttribute('aria-label');
+                    reviewerName = label.replace('Photo of ', '').trim();
                 }
                 
-                // Fallback: Button with "Photo of X" aria-label
+                // Try 2: Link to contributor profile
                 if (!reviewerName) {
-                    const photoBtn = container.querySelector('button[aria-label^="Photo of"]');
-                    if (photoBtn) {
-                        const label = photoBtn.getAttribute('aria-label');
-                        reviewerName = label.replace('Photo of ', '').trim();
+                    const contribLink = container.querySelector('a[href*="/contrib/"]');
+                    if (contribLink) {
+                        // Get the text content or aria-label
+                        reviewerName = contribLink.textContent?.trim() || 
+                                      contribLink.getAttribute('aria-label')?.trim();
+                    }
+                }
+                
+                // Try 3: First anchor or button with non-empty text at top of container
+                if (!reviewerName) {
+                    const nameLinks = container.querySelectorAll('a, button');
+                    for (const el of nameLinks) {
+                        const text = el.textContent?.trim();
+                        // Name should be short (not review text) and not a date
+                        if (text && text.length > 1 && text.length < 50 && 
+                            !text.match(/ago|review|star|helpful|like|share|more/i)) {
+                            reviewerName = text;
+                            break;
+                        }
+                    }
+                }
+                
+                // Try 4: Look for spans/divs with short text before the star rating
+                if (!reviewerName) {
+                    const allText = container.querySelectorAll('span, div');
+                    for (const el of allText) {
+                        const text = el.textContent?.trim();
+                        // Check if this looks like a name
+                        if (text && text.length > 1 && text.length < 40 &&
+                            !text.match(/(\d+\s*(star|review|ago|year|month|week|day|hour|minute))/i) &&
+                            !text.includes('·') && !text.includes('|')) {
+                            // Check if this element is before/near star rating
+                            if (el.compareDocumentPosition && starEl && 
+                                (el.compareDocumentPosition(starEl) & Node.DOCUMENT_POSITION_FOLLOWING)) {
+                                reviewerName = text;
+                                break;
+                            }
+                        }
                     }
                 }
                 
                 if (!reviewerName) reviewerName = 'Unknown';
                 
                 // === REVIEWER SUBTITLE ===
-                // Google uses .RfnDt class for subtitle (e.g., "Local Guide · 26 reviews")
                 let reviewerSubtitle = null;
-                const subtitleEl = container.querySelector('.RfnDt');
-                if (subtitleEl) {
-                    reviewerSubtitle = subtitleEl.textContent?.trim();
-                }
-                
-                // === REVIEW DATE ===
-                // Google uses .rsqaWe class for the date
-                let reviewDate = null;
-                const dateEl = container.querySelector('.rsqaWe');
-                if (dateEl) {
-                    reviewDate = dateEl.textContent?.trim();
-                }
-                
-                // Fallback: look for date pattern in text
-                if (!reviewDate) {
-                    const allText = container.innerText || '';
-                    const datePatterns = [
-                        /(\d+\s*(year|month|week|day|hour|minute)s?\s*ago)/i,
-                        /((a|an)\s+(year|month|week|day|hour|minute)\s*ago)/i,
-                    ];
-                    for (const pattern of datePatterns) {
-                        const match = allText.match(pattern);
-                        if (match) {
-                            reviewDate = match[1];
+                // Look for text containing "Local Guide", "reviews", etc.
+                const allSpans = container.querySelectorAll('span, div');
+                for (const span of allSpans) {
+                    const text = span.textContent?.trim();
+                    if (text && (text.includes('Local Guide') || 
+                                text.match(/\d+\s*reviews?/i) ||
+                                text.includes('·'))) {
+                        // Skip if it's the full inner text (too long)
+                        if (text.length < 100) {
+                            reviewerSubtitle = text;
                             break;
                         }
                     }
                 }
                 
-                // === REVIEW TEXT ===
-                // Google uses .wiI7pd class for review text
-                let reviewText = null;
-                const textEl = container.querySelector('.wiI7pd');
-                if (textEl) {
-                    reviewText = textEl.textContent?.trim();
+                // === REVIEW DATE ===
+                let reviewDate = null;
+                const containerText = container.innerText || '';
+                
+                // Look for date patterns
+                const datePatterns = [
+                    /(\d+\s*(year|month|week|day|hour|minute)s?\s*ago)/i,
+                    /((a|an)\s+(year|month|week|day|hour|minute)\s*ago)/i,
+                ];
+                for (const pattern of datePatterns) {
+                    const match = containerText.match(pattern);
+                    if (match) {
+                        reviewDate = match[0].trim();
+                        break;
+                    }
                 }
                 
-                // Fallback: look for .MyEned span (expanded text)
-                if (!reviewText) {
-                    const expandedText = container.querySelector('.MyEned span');
-                    if (expandedText) {
-                        reviewText = expandedText.textContent?.trim();
+                // === REVIEW TEXT ===
+                let reviewText = null;
+                
+                // Method 1: Find the longest text block that looks like a review
+                const textElements = container.querySelectorAll('span, div');
+                let longestText = '';
+                
+                for (const el of textElements) {
+                    // Skip elements that contain child elements with substantial text
+                    // (we want the innermost text container)
+                    const hasTextChildren = Array.from(el.children).some(
+                        child => child.textContent?.trim().length > 30
+                    );
+                    if (hasTextChildren) continue;
+                    
+                    const text = el.textContent?.trim();
+                    if (text && text.length > longestText.length && text.length > 20) {
+                        // Skip if it looks like metadata
+                        if (!text.match(/^(Local Guide|·|\d+\s*(reviews?|star|ago|year|month|week|day))/i)) {
+                            // Check this isn't the reviewer name
+                            if (text !== reviewerName && !text.includes(reviewerName)) {
+                                longestText = text;
+                            }
+                        }
                     }
+                }
+                
+                // Clean up the review text
+                if (longestText.length > 20) {
+                    reviewText = longestText;
+                    // Remove date from end if present
+                    for (const pattern of datePatterns) {
+                        reviewText = reviewText.replace(pattern, '').trim();
+                    }
+                    // Remove "More" button text if present
+                    reviewText = reviewText.replace(/\s*More\s*$/i, '').trim();
                 }
                 
                 // === LIKES COUNT ===
                 let likesCount = null;
-                const likeBtn = container.querySelector('button[aria-label*="helpful" i], button[aria-label*="like" i]');
-                if (likeBtn) {
-                    const likeLabel = likeBtn.getAttribute('aria-label') || '';
-                    const likesMatch = likeLabel.match(/(\d+)/);
-                    if (likesMatch) {
-                        likesCount = parseInt(likesMatch[1]);
+                // Look for helpful/like button with count
+                const likeButtons = container.querySelectorAll('button');
+                for (const btn of likeButtons) {
+                    const ariaLabel = btn.getAttribute('aria-label') || '';
+                    if (ariaLabel.match(/helpful|like/i)) {
+                        const likesMatch = ariaLabel.match(/(\d+)/);
+                        if (likesMatch) {
+                            likesCount = parseInt(likesMatch[1]);
+                            break;
+                        }
                     }
                 }
                 
                 // === REVIEW ID ===
-                const reviewId = container.getAttribute('data-review-id') || `review-${results.length}`;
+                const reviewId = container.getAttribute('data-review-id') || `review-${index}`;
                 
-                results.push({
+                return {
                     reviewId,
                     reviewerName,
                     reviewerSubtitle,
                     rating,
-                    reviewText,
+                    reviewText: reviewText || null,
                     reviewDate,
                     likesCount,
                     shareLink: null
-                });
+                };
                 
             } catch (error) {
-                console.error('Error extracting review:', error.message);
+                console.error('Error extracting review data:', error.message);
+                return null;
             }
         }
-        
-        return results;
     }, maxReviews);
     
     log.info?.(`📜 Extracted ${reviews.length} reviews from page`);
