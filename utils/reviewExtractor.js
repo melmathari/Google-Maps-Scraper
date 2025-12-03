@@ -205,7 +205,25 @@ async function clickReviewsTab(page, log) {
         });
         
         if (clicked) {
-            log.info(`✓ Opened reviews panel (method: ${clicked})`);
+            log.info(`✓ Clicked reviews panel (method: ${clicked})`);
+            
+            // Wait for reviews to actually load
+            try {
+                await page.waitForSelector('.jftiEf.fontBodyMedium, div[data-review-id], button[aria-label^="Photo of"]', { 
+                    timeout: 15000 
+                });
+                log.info(`✓ Reviews loaded successfully`);
+            } catch (waitError) {
+                log.warning(`Reviews may not have loaded fully: ${waitError.message}`);
+                // Check if we have any reviews anyway
+                const hasReviews = await page.evaluate(() => {
+                    return document.querySelectorAll('.jftiEf, div[data-review-id]').length > 0;
+                });
+                if (!hasReviews) {
+                    log.warning('No reviews found on page');
+                }
+            }
+            
             await randomDelay(2000, 3000);
             return true;
         }
