@@ -165,6 +165,45 @@ async function waitForSidebar(page, log) {
  */
 async function clickReviewsTab(page, log) {
     try {
+        // First, wait for the Reviews tab/button to appear
+        // On Apify/proxies, this can take 1-2 seconds after the sidebar loads
+        log.info('⏳ Waiting for Reviews tab to appear...');
+        
+        try {
+            await page.waitForFunction(() => {
+                // Check for tab with Reviews text
+                const tabs = document.querySelectorAll('[role="tab"]');
+                for (const tab of tabs) {
+                    const ariaLabel = tab.getAttribute('aria-label') || '';
+                    const textContent = tab.textContent || '';
+                    if (ariaLabel.toLowerCase().includes('reviews') || textContent.toLowerCase().includes('reviews')) {
+                        return true;
+                    }
+                }
+                // Check for button with Reviews text
+                const buttons = document.querySelectorAll('button');
+                for (const btn of buttons) {
+                    const ariaLabel = btn.getAttribute('aria-label') || '';
+                    const textContent = btn.textContent || '';
+                    if (textContent.toLowerCase().includes('write')) continue;
+                    if (ariaLabel.toLowerCase().includes('reviews') || 
+                        textContent.toLowerCase().includes('reviews') ||
+                        /\d+\s*reviews?/i.test(ariaLabel) || 
+                        /\d+\s*reviews?/i.test(textContent)) {
+                        return true;
+                    }
+                }
+                return false;
+            }, { timeout: 15000 });
+            log.info('✓ Reviews tab found');
+        } catch (waitError) {
+            log.warning(`Reviews tab not found after waiting: ${waitError.message}`);
+            return false;
+        }
+        
+        // Small delay to ensure element is clickable
+        await randomDelay(500, 1000);
+        
         const clicked = await page.evaluate(() => {
             // Method 1: Find tab with role="tab" containing "Reviews"
             const tabs = document.querySelectorAll('[role="tab"]');
@@ -207,14 +246,73 @@ async function clickReviewsTab(page, log) {
         if (clicked) {
             log.info(`✓ Clicked reviews panel (method: ${clicked})`);
             
-            // Wait for reviews to start loading (brief wait, scrolling will load more)
-            try {
-                await page.waitForSelector('.jftiEf.fontBodyMedium, div[data-review-id], button[aria-label^="Photo of"], span[role="img"][aria-label*="star"]', { 
-                    timeout: 10000 
+            // Wait for reviews panel to fully load - try multiple selectors
+            // The reviews panel needs time to render, especially on slower connections/proxies
+            let reviewsLoaded = false;
+            const reviewSelectors = [
+                'div[data-review-id]',
+                'button[aria-label^="Photo of"]',
+                'span[role="img"][aria-label*="star"]',
+                '.jftiEf.fontBodyMedium'
+            ];
+            
+            // First wait - longer timeout for initial load
+            for (const selector of reviewSelectors) {
+                try {
+                    await page.waitForSelector(selector, { timeout: 15000 });
+                    reviewsLoaded = true;
+                    log.info(`✓ Reviews panel loaded (selector: ${selector.substring(0, 30)}...)`);
+                    break;
+                } catch (e) {
+                    // Continue to next selector
+                }
+            }
+            
+            // If reviews didn't load, try scrolling the page to trigger lazy loading
+            if (!reviewsLoaded) {
+                log.info('⏳ Reviews not immediately visible, attempting to trigger load...');
+                
+                // Try clicking on the reviews area or scrolling to trigger loading
+                await page.evaluate(() => {
+                    // Look for any scrollable container that might contain reviews
+                    const scrollables = document.querySelectorAll('[role="main"], [role="region"], [tabindex="0"]');
+                    for (const el of scrollables) {
+                        if (el.scrollHeight > el.clientHeight) {
+                            // Scroll down a bit to trigger lazy loading
+                            el.scrollTop = 100;
+                            el.scrollTop = 0;
+                        }
+                    }
+                    
+                    // Also try keyboard navigation to ensure focus
+                    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }));
                 });
-            } catch (waitError) {
-                // Don't warn here - scrolling will load reviews
-                log.debug(`Initial review selector wait: ${waitError.message}`);
+                
+                await randomDelay(3000, 4000);
+                
+                // Check again for reviews
+                for (const selector of reviewSelectors) {
+                    try {
+                        await page.waitForSelector(selector, { timeout: 10000 });
+                        reviewsLoaded = true;
+                        log.info(`✓ Reviews loaded after scroll trigger (selector: ${selector.substring(0, 30)}...)`);
+                        break;
+                    } catch (e) {
+                        // Continue
+                    }
+                }
+            }
+            
+            // Final check - see if we have any reviews at all
+            if (!reviewsLoaded) {
+                const reviewCount = await page.evaluate(() => {
+                    return document.querySelectorAll('[data-review-id]').length;
+                });
+                
+                if (reviewCount === 0) {
+                    log.warning('⚠️ No reviews found after waiting. Reviews panel may not have loaded correctly.');
+                    // Don't return false - let the scroll function try to load reviews
+                }
             }
             
             await randomDelay(2000, 3000);

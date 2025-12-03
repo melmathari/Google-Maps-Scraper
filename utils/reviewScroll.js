@@ -59,8 +59,55 @@ async function getLastReviewElement(page) {
 export async function scrollReviewsPanel(page, maxReviews, log = console) {
     log.info?.(`📜 Starting review scroll (target: ${maxReviews === Infinity ? 'unlimited' : maxReviews})`);
     
-    const initialCount = await countReviews(page);
+    let initialCount = await countReviews(page);
     log.info?.(`📜 Initial review count: ${initialCount}`);
+    
+    // If no reviews found initially, wait for them to load
+    // On Apify/proxies, reviews can take a few seconds to appear after clicking the tab
+    if (initialCount === 0) {
+        log.info?.(`📜 Waiting for reviews to load...`);
+        
+        // Try multiple times with increasing delays
+        for (let waitAttempt = 0; waitAttempt < 5; waitAttempt++) {
+            await randomDelay(2000, 3000);
+            
+            // Try to trigger loading by scrolling the reviews container
+            await page.evaluate(() => {
+                // Find any scrollable container that might contain reviews
+                const containers = document.querySelectorAll('[role="main"], [role="region"], [tabindex="0"], [role="tabpanel"]');
+                for (const container of containers) {
+                    if (container.scrollHeight > container.clientHeight) {
+                        // Small scroll to trigger lazy loading
+                        container.scrollTop = 50;
+                        container.scrollTop = 0;
+                    }
+                }
+                
+                // Also try scrolling by finding elements with specific classes
+                const scrollables = document.querySelectorAll('div[style*="overflow"]');
+                for (const el of scrollables) {
+                    if (el.scrollHeight > el.clientHeight + 50) {
+                        el.scrollTop = 50;
+                        el.scrollTop = 0;
+                    }
+                }
+            });
+            
+            initialCount = await countReviews(page);
+            if (initialCount > 0) {
+                log.info?.(`📜 Reviews loaded after wait: ${initialCount}`);
+                break;
+            }
+            
+            log.info?.(`📜 Still waiting for reviews (attempt ${waitAttempt + 1}/5)...`);
+        }
+        
+        // If still no reviews, the panel may not have opened correctly
+        if (initialCount === 0) {
+            log.warning?.(`📜 No reviews found after waiting. Reviews panel may not have loaded.`);
+            return { scrollCount: 0, reachedEnd: true, reviewsLoaded: 0 };
+        }
+    }
     
     if (initialCount >= maxReviews) {
         return { scrollCount: 0, reachedEnd: false, reviewsLoaded: initialCount };
