@@ -255,7 +255,9 @@ await Actor.main(async () => {
                         // Scroll sidebar to load more results
                         const scrollResult = await scrollSidebar(page, scrollTarget);
                         reachedEnd = scrollResult.reachedEnd;
-                        log.info(`✓ Scrolling: ${scrollResult.scrollCount} scrolls, ~${scrollResult.resultsLoaded} results loaded${reachedEnd ? ' (reached end)' : ''}`);
+                        if (reachedEnd) {
+                            log.info(`📜 Reached end of results (${scrollResult.resultsLoaded} total)`);
+                        }
 
                         await randomDelay(2000, 3000);
 
@@ -334,7 +336,7 @@ await Actor.main(async () => {
                         
                         // If we haven't found enough and haven't reached the end, continue scrolling
                         if (scrapedCount < maxResults && !reachedEnd) {
-                            log.info(`🔄 Need ${maxResults - scrapedCount} more results, continuing to scroll...`);
+                            log.info(`📜 Scrolling to find more results...`);
                         }
                     }
 

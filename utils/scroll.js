@@ -16,8 +16,6 @@ export async function scrollSidebar(page, maxResults) {
     let previousHeight = 0;
     let noChangeCount = 0;
 
-    console.log(`📜 Will scroll up to ${maxScrolls} times to load ${maxResults} results...`);
-
     while (scrollCount < maxScrolls) {
         // Check how many results we currently have loaded
         const currentResultCount = await page.evaluate(() => {
@@ -28,7 +26,6 @@ export async function scrollSidebar(page, maxResults) {
 
         // If we have enough results, stop scrolling early
         if (currentResultCount >= maxResults) {
-            console.log(`✓ Already have ${currentResultCount} results loaded, stopping early after ${scrollCount} scrolls`);
             return { scrollCount, reachedEnd: false, resultsLoaded: currentResultCount };
         }
 
@@ -56,7 +53,6 @@ export async function scrollSidebar(page, maxResults) {
         });
 
         if (reachedEnd) {
-            console.log(`✓ Reached end of Google Maps results after ${scrollCount} scrolls`);
             const finalCount = await page.evaluate(() => {
                 return document.querySelectorAll('div[role="article"]').length;
             });
@@ -68,7 +64,6 @@ export async function scrollSidebar(page, maxResults) {
             noChangeCount++;
             // Wait a bit longer and try again (Google Maps can be slow to load)
             if (noChangeCount >= 3) {
-                console.log(`✓ No new content after ${noChangeCount} attempts, stopping at ${scrollCount} scrolls`);
                 const finalCount = await page.evaluate(() => {
                     return document.querySelectorAll('div[role="article"]').length;
                 });
@@ -81,17 +76,11 @@ export async function scrollSidebar(page, maxResults) {
 
         previousHeight = scrollResult.height;
         scrollCount++;
-
-        // Log progress every 10 scrolls
-        if (scrollCount % 10 === 0) {
-            console.log(`   Scrolled ${scrollCount} times, loaded ~${currentResultCount} results so far...`);
-        }
     }
 
     const finalCount = await page.evaluate(() => {
         return document.querySelectorAll('div[role="article"]').length;
     });
-    console.log(`✓ Completed maximum ${scrollCount} scrolls, loaded ${finalCount} results`);
     return { scrollCount, reachedEnd: false, resultsLoaded: finalCount };
 }
 
