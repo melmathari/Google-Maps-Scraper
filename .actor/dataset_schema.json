@@ -11,52 +11,46 @@
             },
             "url": {
                 "type": "string",
-                "format": "uri",
                 "description": "Google Maps URL for the business"
             },
             "rating": {
-                "type": "number",
-                "minimum": 0,
-                "maximum": 5,
+                "type": ["number", "null"],
                 "description": "Average rating (0-5 stars)"
             },
             "reviewCount": {
-                "type": "integer",
-                "minimum": 0,
+                "type": ["integer", "null"],
                 "description": "Total number of reviews"
             },
             "category": {
-                "type": "string",
+                "type": ["string", "null"],
                 "description": "Business category or type"
             },
             "address": {
-                "type": "string",
+                "type": ["string", "null"],
                 "description": "Full street address"
             },
             "phone": {
-                "type": "string",
+                "type": ["string", "null"],
                 "description": "Phone number"
             },
             "website": {
-                "type": "string",
-                "format": "uri",
+                "type": ["string", "null"],
                 "description": "Business website URL"
             },
             "hoursStatus": {
-                "type": "string",
+                "type": ["string", "null"],
                 "description": "Current open/closed status and hours"
             },
             "priceLevel": {
-                "type": "string",
+                "type": ["string", "null"],
                 "description": "Price level indicator"
             },
             "plusCode": {
-                "type": "string",
+                "type": ["string", "null"],
                 "description": "Google Plus Code for location"
             },
             "scrapedAt": {
                 "type": "string",
-                "format": "date-time",
                 "description": "Timestamp when the data was scraped"
             },
             "isSponsored": {
