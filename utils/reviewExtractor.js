@@ -1,4 +1,5 @@
 import { randomDelay } from './utils.js';
+import { scrollReviewsPanel } from './reviewScroll.js';
 
 /**
  * Extract reviews for a business by clicking on its listing to open the sidebar
@@ -217,74 +218,6 @@ async function clickReviewsTab(page, log) {
     }
 }
 
-/**
- * Scroll the reviews panel to load more reviews
- */
-async function scrollReviewsPanel(page, maxReviews, log) {
-    const maxScrolls = Math.min(200, Math.max(5, Math.ceil(maxReviews / 3) + 10));
-    let scrollCount = 0;
-    let previousCount = 0;
-    let noChangeCount = 0;
-    
-    while (scrollCount < maxScrolls) {
-        // Count reviews by data-review-id attribute (the unique identifier)
-        const currentCount = await page.evaluate(() => {
-            // Each review container has data-review-id attribute
-            const reviewContainers = document.querySelectorAll('div.jftiEf[data-review-id]');
-            return reviewContainers.length;
-        });
-        
-        if (currentCount >= maxReviews) {
-            log.info(`📜 Loaded ${currentCount} reviews (target reached)`);
-            return;
-        }
-        
-        if (currentCount === previousCount) {
-            noChangeCount++;
-            if (noChangeCount >= 5) {
-                log.info(`📜 No more reviews loading (${currentCount} total)`);
-                return;
-            }
-        } else {
-            noChangeCount = 0;
-            previousCount = currentCount;
-            log.debug(`📜 Loaded ${currentCount} reviews so far...`);
-        }
-        
-        // Scroll the reviews container
-        await page.evaluate(() => {
-            const scrollableSelectors = [
-                '[role="main"]',
-                '.section-scrollbox',
-                '[tabindex="-1"]',
-            ];
-            
-            for (const selector of scrollableSelectors) {
-                const container = document.querySelector(selector);
-                if (container && container.scrollHeight > container.clientHeight) {
-                    container.scrollTop = container.scrollHeight;
-                    return true;
-                }
-            }
-            
-            const allDivs = document.querySelectorAll('div');
-            for (const div of allDivs) {
-                const style = window.getComputedStyle(div);
-                const isScrollable = (style.overflowY === 'auto' || style.overflowY === 'scroll') &&
-                                    div.scrollHeight > div.clientHeight;
-                if (isScrollable && div.scrollHeight > 500) {
-                    div.scrollTop = div.scrollHeight;
-                    return true;
-                }
-            }
-            
-            return false;
-        });
-        
-        await randomDelay(1500, 2500);
-        scrollCount++;
-    }
-}
 
 /**
  * Extract reviews from the current page using multiple robust selectors
