@@ -167,11 +167,38 @@ async function clickOnListing(page, business, log) {
  */
 async function waitForSidebar(page, log) {
     try {
+        // Wait for the business name h1 to appear (NOT "Results")
         await page.waitForFunction(() => {
             const h1 = document.querySelector('h1');
-            const tabs = document.querySelectorAll('[role="tab"]');
-            return h1 || tabs.length > 0;
+            if (h1) {
+                const text = h1.textContent?.trim() || '';
+                // Make sure it's not the search results h1
+                if (text && text !== 'Results' && text.length > 0) {
+                    return true;
+                }
+            }
+            return false;
         }, { timeout: 15000 });
+        log.info('✓ Business panel h1 loaded');
+        
+        // Now wait for the tab bar (Overview, Reviews, About) to appear
+        // These tabs might not have role="tab", so look for buttons in the tab area
+        await page.waitForFunction(() => {
+            // Look for the tab bar - buttons containing Overview, Reviews, About
+            const buttons = document.querySelectorAll('button');
+            let hasOverview = false;
+            let hasReviews = false;
+            
+            for (const btn of buttons) {
+                const text = (btn.textContent || '').toLowerCase();
+                if (text === 'overview') hasOverview = true;
+                if (text === 'reviews') hasReviews = true;
+            }
+            
+            return hasOverview && hasReviews;
+        }, { timeout: 10000 });
+        log.info('✓ Tab bar loaded (Overview, Reviews tabs found)');
+        
     } catch (error) {
         log.warning(`Sidebar may not have loaded fully: ${error.message}`);
     }
@@ -217,21 +244,16 @@ async function clickReviewsTab(page, log) {
                 const tabs = document.querySelectorAll('[role="tab"]');
                 for (const tab of tabs) {
                     const ariaLabel = tab.getAttribute('aria-label') || '';
-                    const textContent = tab.textContent || '';
-                    if (ariaLabel.toLowerCase().includes('reviews') || textContent.toLowerCase().includes('reviews')) {
+                    const textContent = tab.textContent?.trim() || '';
+                    if (ariaLabel.toLowerCase() === 'reviews' || textContent.toLowerCase() === 'reviews') {
                         return true;
                     }
                 }
-                // Check for button with Reviews text
+                // Check for button that is EXACTLY "Reviews" (the tab)
                 const buttons = document.querySelectorAll('button');
                 for (const btn of buttons) {
-                    const ariaLabel = btn.getAttribute('aria-label') || '';
-                    const textContent = btn.textContent || '';
-                    if (textContent.toLowerCase().includes('write')) continue;
-                    if (ariaLabel.toLowerCase().includes('reviews') || 
-                        textContent.toLowerCase().includes('reviews') ||
-                        /\d+\s*reviews?/i.test(ariaLabel) || 
-                        /\d+\s*reviews?/i.test(textContent)) {
+                    const textContent = btn.textContent?.trim() || '';
+                    if (textContent.toLowerCase() === 'reviews') {
                         return true;
                     }
                 }
@@ -263,34 +285,54 @@ async function clickReviewsTab(page, log) {
             const tabs = document.querySelectorAll('[role="tab"]');
             for (const tab of tabs) {
                 const ariaLabel = tab.getAttribute('aria-label') || '';
-                const textContent = tab.textContent || '';
-                if (ariaLabel.toLowerCase().includes('reviews') || textContent.toLowerCase().includes('reviews')) {
+                const textContent = tab.textContent?.trim() || '';
+                if (ariaLabel.toLowerCase().includes('reviews') || textContent.toLowerCase() === 'reviews') {
                     tab.click();
                     return 'tab-role';
                 }
             }
             
-            // Method 2: Look for buttons containing "Reviews"
+            // Method 2: Look for button that is EXACTLY "Reviews" (the tab button)
+            // This is the tab next to "Overview" and "About"
             const buttons = document.querySelectorAll('button');
             for (const btn of buttons) {
-                const ariaLabel = btn.getAttribute('aria-label') || '';
-                const textContent = btn.textContent || '';
-                if (textContent.toLowerCase().includes('write')) continue;
-                
-                if (ariaLabel.toLowerCase().includes('reviews') || 
-                    (textContent.toLowerCase().includes('reviews') && !textContent.toLowerCase().includes('more reviews'))) {
+                const textContent = btn.textContent?.trim() || '';
+                // The tab button should ONLY say "Reviews", not "333 reviews" or "Write a review"
+                if (textContent.toLowerCase() === 'reviews') {
                     btn.click();
-                    return 'button-reviews';
+                    return 'button-tab-exact';
                 }
             }
             
-            // Method 3: Look for review count button (e.g., "333 reviews")
+            // Method 3: Look for buttons with aria-label exactly "Reviews"
+            for (const btn of buttons) {
+                const ariaLabel = btn.getAttribute('aria-label') || '';
+                if (ariaLabel.toLowerCase() === 'reviews') {
+                    btn.click();
+                    return 'button-aria-exact';
+                }
+            }
+            
+            // Method 4: Fallback - look for buttons containing "Reviews" but NOT numbers or "write"
+            for (const btn of buttons) {
+                const textContent = btn.textContent?.trim() || '';
+                const lower = textContent.toLowerCase();
+                if (lower.includes('write')) continue;
+                if (/\d/.test(textContent)) continue; // Skip if contains numbers (like "333 reviews")
+                
+                if (lower.includes('reviews')) {
+                    btn.click();
+                    return 'button-reviews-fallback';
+                }
+            }
+            
+            // Method 5: Last resort - click review count button (e.g., "333 reviews")
             for (const btn of buttons) {
                 const ariaLabel = btn.getAttribute('aria-label') || '';
                 const textContent = btn.textContent || '';
                 if (/\d+\s*reviews?/i.test(ariaLabel) || /\d+\s*reviews?/i.test(textContent)) {
                     btn.click();
-                    return 'review-count';
+                    return 'review-count-lastresort';
                 }
             }
             
