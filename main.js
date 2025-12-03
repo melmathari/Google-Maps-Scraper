@@ -240,9 +240,17 @@ await Actor.main(async () => {
                     let totalSkipped = 0;
                     
                     while (scrapedCount < maxResults && !reachedEnd) {
-                        // Scroll target = already processed + what we still need
-                        // This ensures we keep scrolling past already-seen results
-                        const scrollTarget = scrapedUrls.size + (maxResults - scrapedCount);
+                        // Get current loaded count to calculate scroll target
+                        const currentLoaded = await page.evaluate(() => {
+                            const articles = document.querySelectorAll('div[role="article"]');
+                            const links = document.querySelectorAll('a[href*="/maps/place/"]');
+                            return Math.max(articles.length, links.length);
+                        });
+                        
+                        // Scroll target = currently loaded + what we still need
+                        // This ensures we always try to load MORE than what's visible
+                        const stillNeeded = maxResults - scrapedCount;
+                        const scrollTarget = currentLoaded + stillNeeded;
                         
                         // Scroll sidebar to load more results
                         const scrollResult = await scrollSidebar(page, scrollTarget);
