@@ -106,22 +106,58 @@ await Actor.main(async () => {
         navigationTimeoutSecs: 60,
         launchContext: {
             launchOptions: {
-                headless: true,
+                headless: 'new', // Use new headless mode (more stealth)
                 args: [
                     '--no-sandbox',
                     '--disable-setuid-sandbox',
                     '--disable-dev-shm-usage',
                     '--disable-blink-features=AutomationControlled',
+                    '--disable-web-security',
+                    '--disable-features=IsolateOrigins,site-per-process',
                     '--window-size=1920,1080',
-                    '--lang=en-US,en'
+                    '--lang=en-US,en',
+                    '--disable-infobars',
+                    '--disable-background-timer-throttling',
+                    '--disable-backgrounding-occluded-windows',
+                    '--disable-renderer-backgrounding'
                 ]
             },
-            userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
         },
+        
+        // Add stealth settings to avoid bot detection
+        preNavigationHooks: [
+            async ({ page }) => {
+                // Hide webdriver property
+                await page.evaluateOnNewDocument(() => {
+                    Object.defineProperty(navigator, 'webdriver', {
+                        get: () => undefined,
+                    });
+                    
+                    // Override plugins length
+                    Object.defineProperty(navigator, 'plugins', {
+                        get: () => [1, 2, 3, 4, 5],
+                    });
+                    
+                    // Override languages
+                    Object.defineProperty(navigator, 'languages', {
+                        get: () => ['en-US', 'en'],
+                    });
+                    
+                    // Add chrome runtime
+                    window.chrome = {
+                        runtime: {},
+                    };
+                });
+            }
+        ],
 
         async requestHandler({ page, request, log }) {
             const url = request.url;
 
+            // Set viewport to ensure consistent rendering
+            await page.setViewport({ width: 1920, height: 1080 });
+            
             // Force English language in HTTP headers
             await page.setExtraHTTPHeaders({
                 'Accept-Language': 'en-US,en;q=0.9'

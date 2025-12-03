@@ -15,6 +15,21 @@ export async function extractReviewsFromListing(page, business, maxReviews, extr
     const targetReviews = isUnlimited ? Infinity : maxReviews;
     
     try {
+        // Check for Google bot detection / unusual traffic page
+        const isBotBlocked = await page.evaluate(() => {
+            const bodyText = document.body?.innerText?.toLowerCase() || '';
+            return bodyText.includes('unusual traffic') || 
+                   bodyText.includes('captcha') ||
+                   bodyText.includes('are you a robot') ||
+                   bodyText.includes('automated queries');
+        });
+        
+        if (isBotBlocked) {
+            log.error('⚠️ Google bot detection triggered! The page shows unusual traffic warning.');
+            log.error('Try using RESIDENTIAL proxies or reducing request rate.');
+            return [];
+        }
+        
         // Click on the listing to open the sidebar
         const clicked = await clickOnListing(page, business, log);
         if (!clicked) {
@@ -22,7 +37,8 @@ export async function extractReviewsFromListing(page, business, maxReviews, extr
             return [];
         }
         
-        await randomDelay(2000, 3000);
+        // Increased delay for cloud environments
+        await randomDelay(3000, 5000);
         
         // Wait for the sidebar to load
         await waitForSidebar(page, log);
@@ -166,8 +182,33 @@ async function waitForSidebar(page, log) {
 async function clickReviewsTab(page, log) {
     try {
         // First, wait for the Reviews tab/button to appear
-        // On Apify/proxies, this can take 1-2 seconds after the sidebar loads
+        // On Apify/proxies, this can take several seconds after the sidebar loads
         log.info('⏳ Waiting for Reviews tab to appear...');
+        
+        // DEBUG: Log what we see on the page
+        const pageState = await page.evaluate(() => {
+            const tabs = document.querySelectorAll('[role="tab"]');
+            const buttons = document.querySelectorAll('button');
+            const tabInfo = Array.from(tabs).map(t => ({
+                text: t.textContent?.substring(0, 50),
+                aria: t.getAttribute('aria-label')
+            }));
+            const buttonInfo = Array.from(buttons).slice(0, 10).map(b => ({
+                text: b.textContent?.substring(0, 50),
+                aria: b.getAttribute('aria-label')
+            }));
+            return { 
+                tabCount: tabs.length, 
+                buttonCount: buttons.length,
+                tabs: tabInfo,
+                buttons: buttonInfo,
+                h1: document.querySelector('h1')?.textContent
+            };
+        });
+        log.info(`📊 Page state - H1: "${pageState.h1}", Tabs: ${pageState.tabCount}, Buttons: ${pageState.buttonCount}`);
+        if (pageState.tabs.length > 0) {
+            log.info(`📊 Available tabs: ${JSON.stringify(pageState.tabs)}`);
+        }
         
         try {
             await page.waitForFunction(() => {
@@ -194,10 +235,22 @@ async function clickReviewsTab(page, log) {
                     }
                 }
                 return false;
-            }, { timeout: 15000 });
+            }, { timeout: 30000 }); // Increased timeout for cloud
             log.info('✓ Reviews tab found');
         } catch (waitError) {
             log.warning(`Reviews tab not found after waiting: ${waitError.message}`);
+            
+            // DEBUG: Take note of what's on the page when reviews tab isn't found
+            const debugInfo = await page.evaluate(() => {
+                return {
+                    url: window.location.href,
+                    title: document.title,
+                    bodyText: document.body?.innerText?.substring(0, 500)
+                };
+            });
+            log.warning(`Page debug: URL=${debugInfo.url}, Title=${debugInfo.title}`);
+            log.warning(`Page content preview: ${debugInfo.bodyText?.substring(0, 200)}`);
+            
             return false;
         }
         
@@ -256,10 +309,10 @@ async function clickReviewsTab(page, log) {
                 '.jftiEf.fontBodyMedium'
             ];
             
-            // First wait - longer timeout for initial load
+            // First wait - longer timeout for initial load (increased for cloud)
             for (const selector of reviewSelectors) {
                 try {
-                    await page.waitForSelector(selector, { timeout: 15000 });
+                    await page.waitForSelector(selector, { timeout: 20000 });
                     reviewsLoaded = true;
                     log.info(`✓ Reviews panel loaded (selector: ${selector.substring(0, 30)}...)`);
                     break;

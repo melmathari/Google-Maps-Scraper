@@ -63,13 +63,25 @@ export async function scrollReviewsPanel(page, maxReviews, log = console) {
     log.info?.(`📜 Initial review count: ${initialCount}`);
     
     // If no reviews found initially, wait for them to load
-    // On Apify/proxies, reviews can take a few seconds to appear after clicking the tab
+    // On Apify/proxies, reviews can take several seconds to appear after clicking the tab
     if (initialCount === 0) {
-        log.info?.(`📜 Waiting for reviews to load...`);
+        log.info?.(`📜 Waiting for reviews to load (cloud mode - extended wait)...`);
         
-        // Try multiple times with increasing delays
-        for (let waitAttempt = 0; waitAttempt < 5; waitAttempt++) {
-            await randomDelay(2000, 3000);
+        // DEBUG: Log what we see on the page
+        const pageDebug = await page.evaluate(() => {
+            return {
+                url: window.location.href,
+                hasReviewPanel: !!document.querySelector('[role="tabpanel"]'),
+                allDataReviewIds: document.querySelectorAll('[data-review-id]').length,
+                starElements: document.querySelectorAll('span[role="img"][aria-label*="star"]').length,
+                scrollableContainers: document.querySelectorAll('[style*="overflow"]').length
+            };
+        });
+        log.info?.(`📊 Page debug: ${JSON.stringify(pageDebug)}`);
+        
+        // Try multiple times with increasing delays (extended for cloud)
+        for (let waitAttempt = 0; waitAttempt < 8; waitAttempt++) {
+            await randomDelay(3000, 4000);
             
             // Try to trigger loading by scrolling the reviews container
             await page.evaluate(() => {
@@ -99,12 +111,25 @@ export async function scrollReviewsPanel(page, maxReviews, log = console) {
                 break;
             }
             
-            log.info?.(`📜 Still waiting for reviews (attempt ${waitAttempt + 1}/5)...`);
+            log.info?.(`📜 Still waiting for reviews (attempt ${waitAttempt + 1}/8)...`);
         }
         
         // If still no reviews, the panel may not have opened correctly
         if (initialCount === 0) {
             log.warning?.(`📜 No reviews found after waiting. Reviews panel may not have loaded.`);
+            
+            // Final debug: check if we're on a restricted/bot-blocked page
+            const finalDebug = await page.evaluate(() => {
+                const bodyText = document.body?.innerText || '';
+                return {
+                    hasUnusualTraffic: bodyText.toLowerCase().includes('unusual traffic'),
+                    hasConsent: bodyText.toLowerCase().includes('consent') || bodyText.toLowerCase().includes('cookie'),
+                    pageTitle: document.title,
+                    bodyPreview: bodyText.substring(0, 300)
+                };
+            });
+            log.warning?.(`📊 Final page state: ${JSON.stringify(finalDebug)}`);
+            
             return { scrollCount: 0, reachedEnd: true, reviewsLoaded: 0 };
         }
     }
