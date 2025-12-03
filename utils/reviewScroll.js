@@ -2,43 +2,48 @@ import { randomDelay } from './utils.js';
 
 /**
  * Auto-scroll function that runs entirely inside the browser context
- * This is the exact approach from the tutorial - everything runs inside page.evaluate
+ * Based on the official tutorial approach - everything runs inside page.evaluate
  * @param {Object} page - Puppeteer page
  * @param {number} maxReviews - Maximum reviews to load
  * @returns {Promise<number>} - Number of reviews loaded
  */
 async function autoScrollInBrowser(page, maxReviews) {
     return page.evaluate(async (targetReviews) => {
-        // Helper function to find the scrollable element
+        // Helper function to find the scrollable element - exact approach from tutorial
         async function getScrollableElement() {
+            // Primary selectors from tutorial
             const selectors = [
                 '.DxyBCb [role="main"]',
                 '.WNBkOb [role="main"]',
                 '.review-dialog-list',
                 '.section-layout-root',
-                '.m6QErb.DxyBCb.kA9KIf.dS8AEf',  // Common reviews container
-                '.m6QErb[aria-label]',
-                '.m6QErb.DxyBCb',
-                '[role="main"]',
             ];
 
             for (const selector of selectors) {
                 const element = document.querySelector(selector);
                 if (element) {
-                    // Check if this element is scrollable
-                    if (element.scrollHeight > element.clientHeight) {
-                        return element;
-                    }
+                    console.log(`Found scrollable element with selector: ${selector}`);
+                    return element;
                 }
             }
 
-            // Fallback: find any scrollable container with reviews
+            // Fallback: find any scrollable container with reviews (from tutorial)
             const possibleContainers = document.querySelectorAll('div');
             for (const container of possibleContainers) {
                 if (
                     container.scrollHeight > container.clientHeight &&
                     container.querySelector('.jftiEf.fontBodyMedium')
                 ) {
+                    console.log('Found scrollable container via fallback (contains reviews)');
+                    return container;
+                }
+            }
+
+            // Additional fallback: look for m6QErb class containers (common in Google Maps)
+            const m6QErbContainers = document.querySelectorAll('.m6QErb');
+            for (const container of m6QErbContainers) {
+                if (container.scrollHeight > container.clientHeight) {
+                    console.log('Found scrollable m6QErb container');
                     return container;
                 }
             }
@@ -47,7 +52,7 @@ async function autoScrollInBrowser(page, maxReviews) {
         }
 
         // Count reviews using the tutorial's selector
-        const getReviewCount = () => {
+        const getScrollHeight = () => {
             const reviews = document.querySelectorAll('.jftiEf.fontBodyMedium');
             return reviews.length;
         };
@@ -55,44 +60,50 @@ async function autoScrollInBrowser(page, maxReviews) {
         const scrollable = await getScrollableElement();
         if (!scrollable) {
             console.error('Could not find scrollable container');
-            return 0;
+            // Debug: log what containers exist
+            const allContainers = document.querySelectorAll('div[class*="m6QErb"], div[class*="DxyBCb"], div[role="main"]');
+            console.log(`Found ${allContainers.length} potential containers`);
+            return getScrollHeight(); // Return current count even if can't scroll
         }
 
-        let lastCount = getReviewCount();
-        let noChangeCount = 0;
-        const maxTries = 15; // More attempts than tutorial's 10
-        let scrollAttempts = 0;
-        const maxScrollAttempts = 500; // Safety limit
+        console.log(`Scrollable container: scrollHeight=${scrollable.scrollHeight}, clientHeight=${scrollable.clientHeight}`);
 
-        while (noChangeCount < maxTries && scrollAttempts < maxScrollAttempts) {
+        let lastHeight = getScrollHeight();
+        let noChangeCount = 0;
+        const maxTries = 10; // Match tutorial's value
+
+        while (noChangeCount < maxTries) {
             // Check if we've reached our target
-            const currentCount = getReviewCount();
+            const currentCount = getScrollHeight();
             if (targetReviews !== Infinity && currentCount >= targetReviews) {
+                console.log(`Reached target of ${targetReviews} reviews`);
                 return currentCount;
             }
 
-            // Scroll to bottom of the container
+            // Scroll to bottom of the container (exact approach from tutorial)
             if (scrollable.scrollTo) {
                 scrollable.scrollTo(0, scrollable.scrollHeight);
             } else {
                 scrollable.scrollTop = scrollable.scrollHeight;
             }
 
-            // Wait for new content to load
+            // Wait for new content to load (2 seconds as in tutorial)
             await new Promise((resolve) => setTimeout(resolve, 2000));
 
-            const newCount = getReviewCount();
-            if (newCount === lastCount) {
+            const newHeight = getScrollHeight();
+            console.log(`Scroll attempt: ${newHeight} reviews (was ${lastHeight})`);
+            
+            if (newHeight === lastHeight) {
                 noChangeCount++;
+                console.log(`No new reviews loaded (attempt ${noChangeCount}/${maxTries})`);
             } else {
                 noChangeCount = 0;
-                lastCount = newCount;
+                lastHeight = newHeight;
             }
-
-            scrollAttempts++;
         }
 
-        return getReviewCount();
+        console.log(`Finished scrolling: ${getScrollHeight()} total reviews`);
+        return getScrollHeight();
     }, maxReviews);
 }
 
@@ -146,38 +157,79 @@ export async function scrollReviewsPanel(page, maxReviews, log = console) {
     
     log.info?.(`📜 Auto-scroll complete. Loaded ${totalReviews} reviews`);
     
-    // Additional fallback: if auto-scroll didn't work well, try manual scrolling
+    // Additional fallback: if auto-scroll didn't work well, try alternative methods
     if (totalReviews < maxReviews && totalReviews < 50) {
         log.info?.(`📜 Attempting fallback scroll methods...`);
         
-        // Try mouse wheel scrolling as fallback
-        for (let attempt = 0; attempt < 20; attempt++) {
-            const reviewElement = await page.$('.jftiEf.fontBodyMedium') || 
-                                 await page.$('div[data-review-id]');
-            
-            if (reviewElement) {
-                const box = await reviewElement.boundingBox();
-                if (box) {
-                    // Move to middle of reviews area
-                    await page.mouse.move(box.x + 100, box.y + 200);
-                    
-                    // Scroll with mouse wheel
-                    for (let i = 0; i < 5; i++) {
-                        await page.mouse.wheel({ deltaY: 1000 });
-                        await randomDelay(300, 500);
-                    }
+        // Fallback 1: Try keyboard-based scrolling (Page Down)
+        for (let attempt = 0; attempt < 10; attempt++) {
+            // Focus on the reviews area first
+            await page.evaluate(() => {
+                const reviewContainer = document.querySelector('.m6QErb') || 
+                                       document.querySelector('[role="main"]') ||
+                                       document.querySelector('.DxyBCb');
+                if (reviewContainer) {
+                    reviewContainer.focus();
                 }
+            });
+            
+            // Press Page Down multiple times
+            for (let i = 0; i < 3; i++) {
+                await page.keyboard.press('PageDown');
+                await randomDelay(500, 800);
             }
             
             await randomDelay(1500, 2000);
             
             const newCount = await countReviews(page);
-            if (newCount >= maxReviews || newCount === totalReviews) {
+            if (newCount >= maxReviews) {
+                log.info?.(`📜 Keyboard scroll loaded ${newCount} reviews`);
                 break;
             }
             
-            if (attempt % 5 === 0) {
-                log.info?.(`📜 Fallback scroll attempt ${attempt}: ${newCount} reviews`);
+            // Also try direct scroll via evaluate
+            await page.evaluate(() => {
+                const containers = document.querySelectorAll('.m6QErb, [role="main"], .DxyBCb');
+                for (const container of containers) {
+                    if (container.scrollHeight > container.clientHeight) {
+                        container.scrollTop = container.scrollHeight;
+                    }
+                }
+            });
+            
+            await randomDelay(1000, 1500);
+        }
+        
+        // Fallback 2: Try mouse wheel scrolling
+        const reviewElement = await page.$('.jftiEf.fontBodyMedium') || 
+                             await page.$('div[data-review-id]') ||
+                             await page.$('.m6QErb');
+        
+        if (reviewElement) {
+            const box = await reviewElement.boundingBox();
+            if (box) {
+                // Move to middle of reviews area
+                await page.mouse.move(box.x + 100, box.y + 200);
+                
+                for (let attempt = 0; attempt < 15; attempt++) {
+                    // Scroll with mouse wheel
+                    for (let i = 0; i < 5; i++) {
+                        await page.mouse.wheel({ deltaY: 800 });
+                        await randomDelay(200, 400);
+                    }
+                    
+                    await randomDelay(1500, 2000);
+                    
+                    const newCount = await countReviews(page);
+                    if (newCount >= maxReviews) {
+                        log.info?.(`📜 Mouse wheel scroll loaded ${newCount} reviews`);
+                        break;
+                    }
+                    
+                    if (attempt % 5 === 0) {
+                        log.info?.(`📜 Fallback scroll attempt ${attempt}: ${newCount} reviews`);
+                    }
+                }
             }
         }
     }
